@@ -12,6 +12,8 @@ import Prelude
 import Satchmo.Data (literal, variable,positive, Literal)
 
 import qualified Data.IntMap as IM
+import Data.List ( sortBy )
+import Data.Function (on)
 
 -- * data type and elementary ops
   
@@ -30,7 +32,7 @@ instance Show Form where show = show . dimacs
 
 size f = IM.size $ back f -- number of clauses
 
-dimacs f = do
+dimacs f = sortBy (compare `on` map abs) $ do
   (_,cl) <- IM.toList $ back f
   return $ do
     (v,b) <- IM.toList cl
@@ -38,8 +40,7 @@ dimacs f = do
 
 cnf0 :: Form
 cnf0 = Form
-  { -- hack so that 1 is the first fresh variable
-    fore = IM.singleton 0 IM.empty
+  { fore = IM.empty
   , back = IM.empty
   }
 
