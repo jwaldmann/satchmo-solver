@@ -2,6 +2,7 @@
 {-# language FlexibleInstances #-}
 {-# language LambdaCase #-}
 {-# language BangPatterns #-}
+{-# language GeneralizedNewtypeDeriving #-}
 
 module Satchmo.Graph
 
@@ -11,76 +12,86 @@ import Prelude
 
 import Satchmo.Data (literal, variable,positive, Literal)
 
-import qualified Data.IntMap as IM
+import qualified Data.EnumMap as M
 import Data.List ( sortBy )
 import Data.Function (on)
 
 -- * data type and elementary ops
-  
+
+newtype V = V Int deriving (Enum, Show, Eq, Ord)
+newtype C = C Int deriving (Enum, Show, Eq, Ord)
+
 -- | should allow for efficient execution of these ops:
 -- for variable p:
 -- find the clauses where p occurs, with given polarity
 -- for clause c:
 -- find all variables that occur in c, with given polarity.
 data Form  =
-    Form { fore :: ! (IM.IntMap ( IM.IntMap Bool ))
-        , back :: ! (IM.IntMap ( IM.IntMap Bool ))
-        }
+    Form { fore :: ! (M.Map V ( M.Map C Bool ))
+         , next_var :: V
+         , back :: ! (M.Map C ( M.Map V Bool ))
+         , next_clause :: C
+         }
   -- deriving Show
 
-instance Show Form where show = show . dimacs
+instance Show Form where
+  show f = unlines [ show $ fore f, show $ back f
+                   , show $ dimacs f ]
 
-size f = IM.size $ back f -- number of clauses
+size f = M.size $ back f -- number of clauses
 
-dimacs f = sortBy (compare `on` map abs) $ do
-  (_,cl) <- IM.toList $ back f
-  return $ do
-    (v,b) <- IM.toList cl
-    return $ if b then v else negate v
+dimacs f = -- sortBy (compare `on` map abs) $
+           do
+  (k,cl) <- M.toList $ back f
+  return $ (k, do
+    (V v,b) <- M.toList cl
+    return $ if b then v else negate v )
 
 cnf0 :: Form
 cnf0 = Form
-  { fore = IM.empty
-  , back = IM.empty
+  { fore = M.empty
+  , next_var = V 1
+  , back = M.empty
+  , next_clause = C 1
   }
 
 -- * ops that are useful for the solver
 
-without clause  v = IM.delete v clause
+without clause  v = M.delete v clause
 
-clauses f = IM.elems $ back f
+clauses f = M.elems $ back f
 literals cl =
-  map (\(v,b) -> literal b v ) $ IM.toList cl
+  map (\(v,b) -> literal b v ) $ M.toList cl
 
 -- | some empty clause
 contradictory :: Form -> Bool
 contradictory f =
-  IM.fold ( \ v m -> IM.null v || m ) False $ back f
+  M.fold ( \ v m -> M.null v || m ) False $ back f
 
 -- | no clauses at all
 satisfied :: Form -> Bool
-satisfied f = IM.null $ back f
+satisfied f = M.null $ back f
 
 -- | all unit clauses
 unit_clauses :: Form -> [(V,Bool)]
-unit_clauses f = IM.fold
-   ( \ v m -> case IM.toList v of
-        [ (k,b) ] -> (V k,b) : m
+unit_clauses f = M.fold
+   ( \ v m -> case M.toList v of
+        [ (k,b) ] -> (k,b) : m
         _ -> m ) [] $ back f
 
 -- | note: for efficiency, should return the set of
 -- clauses that were changed (instead of all)
 assign :: (V, Bool) -> Form -> Form
 assign (V v, b) f =
-  f { fore = IM.delete v $ fore f
+  f { fore = M.delete v $ fore f
     , back =
-       let cls = IM.findWithDefault IM.empty v $ fore f
-           drop_sat = IM.difference (back f)
-                    $ IM.filter id cls
+       let cls = M.findWithDefault M.empty v $ fore f
+           drop_sat = M.difference (back f)
+                    $ M.filter id cls
        in  foldr ( \ (c,False) b ->
-                    IM.adjust (IM.delete v) c b )
+                    M.adjust (M.delete v) c b )
            drop_sat
-           ( filter (Prelude.not . snd) $ IM.toList cls )
+           ( filter (Prelude.not . snd) $ M.toList cls )
     }
 
 
@@ -88,45 +99,54 @@ assign (V v, b) f =
 add_clauses cls f =
   foldr ( \ cl f -> add_clause f
                     $ map (\(v,b) -> literal b v)
-                    $ IM.toList cl ) f cls
+                    $ M.toList cl ) f cls
 
--- | drop this variable and all clauses where it occurs
-drop_variable (V v) f = 
-  f { fore = IM.delete v $ fore f
-    , back =
-         let occ = fore f IM.! v
-         in  IM.difference (back f) occ
+-- | drop this clause (and all refs to it)
+drop_clause c f =
+  f { fore = foldr ( \ (v,b) m -> M.delete v m )
+        (fore f)
+        (M.toList $ M.findWithDefault M.empty c $ back f)
+    , back = M.delete c $ back f
     }
+
+-- | drop this variable and all clauses where it occurs.
+drop_variable v f =
+  foldr drop_clause 
+    ( f { fore = M.delete v $ fore f
+        , back =
+          let occ = fore f M.! v
+          in  M.difference (back f) occ
+        }
+    ) ( M.keys $ fore f M.! v )
+    
+
 
 -- * ops for building the formula
 
-newtype V = V Int
-newtype C = C Int
 
 add_variable :: Form -> (Form, V)
 add_variable f =
-  let v = IM.size $ fore f
-  in  ( f { fore = IM.insert v IM.empty $ fore f } , V v )
-
-fresh_clause :: Form -> C
-fresh_clause f = C $ IM.size $ back f
+  let V v = next_var f
+  in  ( f { fore = M.insert v M.empty $ fore f
+          , next_var = succ $ next_var f
+          } , V v )
 
 add_edge :: Form -> (V,Bool,C) -> Form
-add_edge f (V v, b, C c) =
-  f { fore = IM.alter ( \ case 
-         Nothing -> Just $ IM.singleton c b
-         Just m -> Just $ IM.insert c b m ) v $ fore f
-    , back = IM.alter ( \ case
-         Nothing -> Just $ IM.singleton v b
-         Just m -> Just $ IM.insert v b m ) c $ back f
+add_edge f (v, b, c) =
+  f { fore = M.alter ( \ case 
+         Nothing -> Just $ M.singleton c b
+         Just m -> Just $ M.insert c b m ) v $ fore f
+    , back = M.alter ( \ case
+         Nothing -> Just $ M.singleton v b
+         Just m -> Just $ M.insert v b m ) c $ back f
     }
 
 add_clause :: Form -> [Literal] -> Form
 add_clause f cl =
-  let c = fresh_clause f
-  in  foldl ( \ f l ->
+  let c = next_clause f
+      g = foldl ( \ f l ->
             add_edge f (V $ variable l,positive l,c)) f cl
-
+  in  g { next_clause = succ $ next_clause g }
     
 
 {-
