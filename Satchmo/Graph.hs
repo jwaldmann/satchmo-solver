@@ -181,7 +181,11 @@ add_clause :: [Literal] -> Form -> Form
 add_clause = checked "add_clause" $ \ cl f ->
   let c = next_clause f
       g = foldr ( \ l f ->
-            add_edge (V $ variable l,positive l,c) f) f cl
+            add_edge (V $ variable l,positive l,c) f)
+          -- following is important for adding the empty clause
+          -- FIXME which should be handled specially
+          ( f { back = M.insert c M.empty $ back f } )
+          cl
   in  g { next_clause = succ $ next_clause g }
     
 

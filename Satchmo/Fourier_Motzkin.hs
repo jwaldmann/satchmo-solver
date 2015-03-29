@@ -61,7 +61,7 @@ eliminate cont nf = do
         return $ M.union cpv cnv
   print ("v/c", v,c)
   print ("pos/neg", pos, neg)
-  -- print ("resolved", resolved :: [M.Map V Bool ])
+  print ("resolved", resolved :: [M.Map V Bool ])
   let res = add_clauses resolved
            $ drop_variable v nf
   -- print res
