@@ -37,6 +37,7 @@ fold f z (Map m) = IM.fold f z m
 findWithDefault d k (Map m) = IM.findWithDefault d (fromEnum k) m
 difference (Map m1) (Map m2) = Map $ IM.difference m1 m2
 union (Map m1) (Map m2) = Map $ IM.union m1 m2
+unionWith f (Map m1) (Map m2) = Map $ IM.unionWith f m1 m2
 intersection (Map m1) (Map m2) = Map $ IM.intersection m1 m2
 adjust f k (Map m) = Map $ IM.adjust f (fromEnum k) m
 alter  f k (Map m) = Map $ IM.alter f (fromEnum k) m

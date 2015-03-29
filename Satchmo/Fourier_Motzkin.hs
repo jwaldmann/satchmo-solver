@@ -1,4 +1,5 @@
 {-# language TupleSections #-}
+{-# language BangPatterns #-}
 
 module Satchmo.Fourier_Motzkin where
 
@@ -23,7 +24,7 @@ fomo cnf = do
 
 print_info msg cnf = do
   hPutStrLn stderr $ unwords [ msg, show $ size cnf, "\n" ]
-  hPutStrLn stderr $ show cnf ++ "\n"
+  -- hPutStrLn stderr $ show cnf ++ "\n"
 
 
 trivial :: Solver -> Solver
@@ -60,11 +61,10 @@ eliminate cont nf = do
         return $ M.union cpv cnv
   print ("v/c", v,c)
   print ("pos/neg", pos, neg)
-  print ("resolved", resolved :: [M.Map V Bool ])
+  -- print ("resolved", resolved :: [M.Map V Bool ])
   let res = add_clauses resolved
-          $ drop_variable v nf
-  print res
-  
+           $ drop_variable v nf
+  -- print res
   let reconstruct v m = Prelude.or $ do
         cp <- map (back nf M.!) pos 
         return $ Prelude.not $ Prelude.or $ do

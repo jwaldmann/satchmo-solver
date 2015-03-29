@@ -10,11 +10,13 @@ where
 
 import Prelude 
 
-import Satchmo.Data (literal, variable,positive, Literal)
+import Satchmo.Data (literal, variable,positive, Literal,Clause)
 
 import qualified Data.EnumMap as M
 import Data.List ( sortBy )
 import Data.Function (on)
+
+import qualified Data.Set as S
 
 -- * data type and elementary ops
 
@@ -33,6 +35,38 @@ data Form  =
          , next_clause :: C
          }
   -- deriving Show
+
+-- | check the structural invariants.
+-- raise error (with msg) if they do not hold.
+checked :: Show a
+  => String -> (a -> Form -> Form) -> (a -> Form -> Form)
+checked msg fun arg f = id
+  $ invariant (unwords [ msg, show arg, "(output)" ]) 
+  $ fun arg
+  $ invariant (unwords [ msg, show arg, "(input)" ]) 
+  $ f 
+
+invariant :: String -> Form -> Form
+invariant msg f =   
+  let forward = S.fromList $ do
+        (v,m) <- M.toList $ fore f
+        (c,b) <- M.toList m
+        return (v,b,c)
+      backward = S.fromList $ do
+        (c,m) <- M.toList $ back f
+        (v,b) <- M.toList m
+        return (v,b,c)
+      f_not_b = S.difference forward backward
+      b_not_f = S.difference backward forward
+      whine = unlines [ msg
+          , "missing clauses " ++ show f_not_b
+          , "missing variabl " ++ show b_not_f
+          , "fore " ++ show (fore f)
+          , "back " ++ show (back f)
+          , show (dimacs f)
+          ]
+  in  if S.null f_not_b && S.null b_not_f
+      then f else error whine
 
 instance Show Form where
   show f = unlines [ show $ fore f, show $ back f
@@ -82,7 +116,7 @@ unit_clauses f = M.fold
 -- | note: for efficiency, should return the set of
 -- clauses that were changed (instead of all)
 assign :: (V, Bool) -> Form -> Form
-assign (V v, b) f =
+assign (v, b) f =
   f { fore = M.delete v $ fore f
     , back =
        let cls = M.findWithDefault M.empty v $ fore f
@@ -96,29 +130,31 @@ assign (V v, b) f =
 
 
 -- | new clauses that refer to existing variables
-add_clauses cls f =
-  foldr ( \ cl f -> add_clause f
-                    $ map (\(v,b) -> literal b v)
-                    $ M.toList cl ) f cls
+add_clauses :: [ M.Map V Bool ] -> Form -> Form
+add_clauses = checked "add_clauses" $ \ cls f ->
+  foldr ( \ cl f -> add_clause 
+          ( map (\(V v,b) -> literal b v) $ M.toList cl ) f )
+        f cls
 
 -- | drop this clause (and all refs to it)
-drop_clause c f =
-  f { fore = foldr ( \ (v,b) m -> M.delete v m )
+drop_clause :: C -> Form -> Form
+drop_clause = checked "drop_clause" $
+   \ c f -> 
+  f { fore = foldr ( \ v m -> M.adjust (M.delete c) v m )
         (fore f)
-        (M.toList $ M.findWithDefault M.empty c $ back f)
+             (M.keys $ back f M.! c)
     , back = M.delete c $ back f
     }
 
 -- | drop this variable and all clauses where it occurs.
-drop_variable v f =
-  foldr drop_clause 
-    ( f { fore = M.delete v $ fore f
-        , back =
-          let occ = fore f M.! v
-          in  M.difference (back f) occ
-        }
-    ) ( M.keys $ fore f M.! v )
+drop_variable :: V -> Form -> Form
+drop_variable = checked "drop_variable" $ \ v f ->
+  drop_variable_only v 
+  $ foldr drop_clause f ( M.keys $ fore f M.! v )
     
+drop_variable_only =  checked "drop_variable_only" $
+  \ v f ->
+      f { fore = M.delete v $ fore f }
 
 
 -- * ops for building the formula
@@ -131,8 +167,8 @@ add_variable f =
           , next_var = succ $ next_var f
           } , V v )
 
-add_edge :: Form -> (V,Bool,C) -> Form
-add_edge f (v, b, c) =
+add_edge :: (V,Bool,C) -> Form -> Form
+add_edge = checked "add_edge" $ \ (v,b,c) f -> 
   f { fore = M.alter ( \ case 
          Nothing -> Just $ M.singleton c b
          Just m -> Just $ M.insert c b m ) v $ fore f
@@ -141,11 +177,11 @@ add_edge f (v, b, c) =
          Just m -> Just $ M.insert v b m ) c $ back f
     }
 
-add_clause :: Form -> [Literal] -> Form
-add_clause f cl =
+add_clause :: [Literal] -> Form -> Form
+add_clause = checked "add_clause" $ \ cl f ->
   let c = next_clause f
-      g = foldl ( \ f l ->
-            add_edge f (V $ variable l,positive l,c)) f cl
+      g = foldr ( \ l f ->
+            add_edge (V $ variable l,positive l,c) f) f cl
   in  g { next_clause = succ $ next_clause g }
     
 

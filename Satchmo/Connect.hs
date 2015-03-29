@@ -28,8 +28,7 @@ instance MonadSAT S where
     return $ literal True v
   
   emit cl = do
-    f <- get
-    put $ add_clause f $ SD.literals cl
+    modify $ add_clause (SD.literals cl)
 
 
 solve :: S (S a) -> IO (Maybe a)
