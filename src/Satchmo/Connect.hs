@@ -1,20 +1,24 @@
 {-# language GeneralizedNewtypeDeriving #-}
 {-# language MultiParamTypeClasses #-}
+{-# language TypeSynonymInstances #-}
+{-# language FlexibleInstances #-}
 
 
 module Satchmo.Connect where
 
 import Satchmo.Graph
+import qualified Data.EnumMap as M
 import Satchmo.Fourier_Motzkin
 
 import Satchmo.MonadSAT
 import Satchmo.Code
-import Satchmo.Boolean ( Boolean )
+import Satchmo.Boolean ( Boolean(..) )
 
 import Satchmo.Data (literal, variable,positive, Literal)
 import qualified Satchmo.Data as SD
 
 import Control.Monad.State.Strict
+import Control.Monad.Reader
 import Control.Applicative
 
 newtype S a = S (State Form a) deriving
@@ -31,15 +35,20 @@ instance MonadSAT S where
     modify $ add_clause (SD.literals cl)
 
 
-solve :: S (S a) -> IO (Maybe a)
+solve :: S (Reader (M.Map V Bool) a) -> IO (Maybe a)
 solve (S ff) = do
-  let (S a,s1) = runState ff cnf0
-  print s1
+  let (r,s1) = runState ff cnf0
+  -- print s1
   res <- fomo s1
-  case res of
-    Nothing -> return Nothing
-    Just m -> do
-      let (b,s2) = runState a s1
-      return $ Just b
+  return $ case res of
+    Nothing -> Nothing
+    Just m -> Just $ runReader r m 
   
-instance Decode S Boolean Bool where 
+instance Decode (Reader (M.Map V Bool)) Boolean Bool where 
+  decode b = case b of
+    Constant c -> return c
+    Boolean l -> do
+      m <- ask
+      let v = M.findWithDefault False ( variable l ) m
+      return $ if positive l then v else not v
+

@@ -15,12 +15,13 @@ import System.Environment
 
 main :: IO ()
 main = do
-    [ n ] <- getArgs
-    res :: Maybe [ Integer ] <- solve $ factor $ read n
+    args <- getArgs
+    let n = case args of
+          [] -> 1001
+          [s] -> read s
+    res :: Maybe [ Integer ] <- solve $ factor n
     print res
 
-factor :: (Decode m Boolean Bool,  MonadSAT m )
-       => Integer -> m (m [Integer])
 factor n = do
         x <- Satchmo.Binary.Op.Flexible.constant n
         a <- number $ width x 

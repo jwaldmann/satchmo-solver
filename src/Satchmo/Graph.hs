@@ -33,6 +33,7 @@ data Form  =
          , next_var :: V
          , back :: ! (M.Map C ( M.Map V Bool ))
          , next_clause :: C
+         , assignment ::  (M.Map V Bool)
          }
   -- deriving Show
 
@@ -40,7 +41,11 @@ data Form  =
 -- raise error (with msg) if they do not hold.
 checked :: Show a
   => String -> (a -> Form -> Form) -> (a -> Form -> Form)
-checked msg fun arg f = id
+checked = unchecked_
+
+unchecked_ msg fun arg f = fun arg f
+
+checked_ msg fun arg f = id
   $ invariant (unwords [ msg, show arg, "(output)" ]) 
   $ fun arg
   $ invariant (unwords [ msg, show arg, "(input)" ]) 
@@ -89,6 +94,16 @@ cnf0 = Form
   , next_clause = C 1
   }
 
+conflict :: Form
+conflict = Form
+  { fore = M.empty
+  , next_var = V 1
+  , back = M.singleton (C 1) M.empty
+  , next_clause = C 2
+  }
+
+  
+
 -- * ops that are useful for the solver
 
 without clause  v = M.delete v clause
@@ -117,17 +132,15 @@ unit_clauses f = M.fold
 -- clauses that were changed (instead of all)
 assign :: (V, Bool) -> Form -> Form
 assign (v, b) f =
-  f { fore = M.delete v $ fore f
-    , back =
-       let cls = M.findWithDefault M.empty v $ fore f
-           drop_sat = M.difference (back f)
-                    $ M.filter id cls
-       in  foldr ( \ (c,False) b ->
-                    M.adjust (M.delete v) c b )
-           drop_sat
-           ( filter (Prelude.not . snd) $ M.toList cls )
-    }
-
+  let cpos = M.filter (==b) $ fore f M.! v
+      cneg = M.filter (/=b) $ fore f M.! v
+      back' = foldr ( \ c m -> M.adjust (M.delete v) c m )
+          (back f) (M.keys cneg)
+      g = f { fore = M.delete v $ fore f 
+            , back = back'
+            }
+  in  foldr drop_clause g (M.keys cpos)
+  
 
 -- | new clauses that refer to existing variables
 add_clauses :: [ M.Map V Bool ] -> Form -> Form
