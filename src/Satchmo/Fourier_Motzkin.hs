@@ -22,7 +22,7 @@ fomo cnf = do
   -- print_info "fomo" cnf
   (   trivial
     $ unitprop
-    $ eliminate 1
+    $ eliminate 10
     $ branch ) cnf
 
 print_info msg cnf = do
@@ -42,6 +42,7 @@ trivial cont cnf = do
 unitprop :: Solver -> Solver
 unitprop cont f = do
   -- print_info "unitprop" f
+  -- FIXME: toList is inefficient here:
   let punits = M.fromList $ do
         (c,m) <- M.toList $ back f
         [(v,True)] <- return $ M.toList m
@@ -116,6 +117,8 @@ islongerthan k xs = not $ null $ drop k xs
 
 branch cnf = do
   -- print_info "branch" cnf
+
+  -- this gives nice results, but is costly:
   let stat = DM.fromListWith (+) $ do
         (c,m) <- M.toList $ back cnf
         let w = -- 2 ^^ negate (M.size m)
@@ -124,6 +127,13 @@ branch cnf = do
         return ((v,b), w)
       ((v,p),w) = maximumBy (compare `on` snd)
                   $ DM.toList stat
+{-
+
+  let (v,m) = maximumBy (compare `on` (M.size.snd)) 
+        $ M.toList $ fore cnf
+      p = M.size (M.filter id m) > M.size (M.filter not m)
+-}
+
   hPutStr stderr $ unwords [ "D", show v, show p ]
   a <- fomo $ assign (v, p) cnf
   case a of
