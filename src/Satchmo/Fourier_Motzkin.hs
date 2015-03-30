@@ -9,7 +9,7 @@ import Satchmo.Data (Variable,variable,positive)
 import qualified Data.EnumMap as M
 import qualified Data.Map.Strict as DM
 
-import Control.Monad ( guard )
+import Control.Monad ( guard, when )
 import Data.Monoid
 import Data.List ( maximumBy, minimumBy )
 import Data.Function (on)
@@ -55,10 +55,10 @@ unitprop cont f = do
   if M.null units
     then cont f
     else do
-      print ("units", units :: M.Map V Bool )
+      -- print ("units", units :: M.Map V Bool )
       if conflicting
          then do
-           hPutStrLn stderr "conflict"
+           -- hPutStrLn stderr "conflict"
            return Nothing
          else do
            later <- fomo $ foldr assign f $ M.toList units
@@ -101,11 +101,11 @@ eliminate bound cont nf = do
               lit <- literals $ cp `without` v
               let v = M.findWithDefault False ( variable lit ) m
               return $ if positive lit then v else Prelude.not v 
-
-      hPutStrLn stderr $ unwords
-        [ "best resolution:", show v, "count", show c ]
-      hPutStr stderr $ unwords
-        [ "R", show v , show (size nf, size res) ]
+      when False $ do
+        hPutStrLn stderr $ unwords
+          [ "best resolution:", show v, "count", show c ]
+        hPutStr stderr $ unwords
+          [ "R", show v , show (size nf, size res) ]
    
       later <- fomo res
       return $ fmap
@@ -124,7 +124,7 @@ branch cnf = do
         return ((v,p), w)
       ((v,p),w) = maximumBy (compare `on` snd)
                   $ DM.toList stat
-  hPutStrLn stderr $ unwords [ "D", show v, show p ]
+  hPutStr stderr $ unwords [ "D", show v, show p ]
   a <- fomo $ assign (v, p) cnf
   case a of
     Just m -> return $ Just $ M.insert v p m
