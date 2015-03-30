@@ -68,18 +68,18 @@ invariant msg f =
           , "missing variabl " ++ show b_not_f
           , "fore " ++ show (fore f)
           , "back " ++ show (back f)
-          , show (dimacs f)
+          , show (toList f)
           ]
   in  if S.null f_not_b && S.null b_not_f
       then f else error whine
 
 instance Show Form where
   show f = unlines [ show $ fore f, show $ back f
-                   , show $ dimacs f ]
+                   , show $ toList f ]
 
 size f = M.size $ back f -- number of clauses
 
-dimacs f = -- sortBy (compare `on` map abs) $
+toList f = -- sortBy (compare `on` map abs) $
            do
   (k,cl) <- M.toList $ back f
   return $ (k, do

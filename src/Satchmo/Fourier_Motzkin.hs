@@ -117,11 +117,11 @@ islongerthan k xs = not $ null $ drop k xs
 branch cnf = do
   -- print_info "branch" cnf
   let stat = DM.fromListWith (+) $ do
-        c <- clauses cnf
-        let s = M.size c
-        let w = 1 / fromIntegral s
-        (v,p) <- M.toList c
-        return ((v,p), w)
+        (c,m) <- M.toList $ back cnf
+        let w = -- 2 ^^ negate (M.size m)
+              1 / fromIntegral (M.size m)
+        (v,b) <- M.toList m        
+        return ((v,b), w)
       ((v,p),w) = maximumBy (compare `on` snd)
                   $ DM.toList stat
   hPutStr stderr $ unwords [ "D", show v, show p ]
