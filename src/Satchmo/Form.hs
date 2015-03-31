@@ -4,7 +4,26 @@
 {-# language BangPatterns #-}
 {-# language GeneralizedNewtypeDeriving #-}
 
-module Satchmo.Graph
+module Satchmo.Form
+
+( Form, V, C -- abstract
+, empty
+, size
+, variables, clauses
+, get_clause
+
+, units, positive_units, negative_units
+, clauses_for, positive_clauses_for, negative_clauses_for
+, literals_for, positive_literals_for, negative_literals_for
+
+, satisfied, contradictory
+, add_clauses, add_clause
+, drop_variable, add_variable
+, assign
+
+-- * clauses
+, without, literals
+)
 
 where
 
@@ -15,7 +34,7 @@ import Satchmo.Data (literal, variable,positive, Literal,Clause)
 import qualified Data.EnumMap as M
 import Data.List ( sortBy )
 import Data.Function (on)
-
+import Control.Monad ( guard )
 import qualified Data.Set as S
 
 -- * data type and elementary ops
@@ -33,9 +52,19 @@ data Form  =
          , next_var :: V
          , back :: ! (M.Map C ( M.Map V Bool ))
          , next_clause :: C
-         , assignment ::  (M.Map V Bool)
          }
   -- deriving Show
+
+-- | this function should never be called because it walks the complete formula
+variables :: Form -> M.Map V ()
+variables f = M.map (const ()) $ fore f
+
+-- | this function should never be called because it walks the complete formula
+clauses :: Form -> M.Map C ()
+clauses f = M.map (const ()) $ back f
+
+get_clause f c =
+  M.findWithDefault (error "get_clause") c $ back f 
 
 -- | check the structural invariants.
 -- raise error (with msg) if they do not hold.
@@ -86,8 +115,8 @@ toList f = -- sortBy (compare `on` map abs) $
     (V v,b) <- M.toList cl
     return $ if b then v else negate v )
 
-cnf0 :: Form
-cnf0 = Form
+empty :: Form
+empty = Form
   { fore = M.empty
   , next_var = V 1
   , back = M.empty
@@ -102,15 +131,40 @@ conflict = Form
   , next_clause = C 2
   }
 
-  
-
 -- * ops that are useful for the solver
+
+clauses_for :: V -> Form -> M.Map C Bool
+clauses_for v f = M.findWithDefault M.empty v $ fore f
+
+positive_clauses_for v f = M.filter id  $ clauses_for v f
+negative_clauses_for v f = M.filter not $ clauses_for v f
+
+literals_for :: C -> Form -> M.Map V Bool
+literals_for c f = M.findWithDefault M.empty c $ back f
+
+positive_literals_for c f = M.filter id  $ literals_for c f
+negative_literals_for c f = M.filter not $ literals_for c f
+
+-- | this function should never be called because it walks the complete formula
+units f = M.filter ( \ m -> 1 == M.size m ) $ back f
+
+-- | this function should never be called because it walks the complete formula
+polar_units :: Bool -> Form -> M.Map V Bool
+polar_units p f = M.fromList $ do
+  (c,m) <- M.toList $ units f
+  let (v,b) = M.findMin m
+  guard $ p == b
+  return (v,b)
+
+-- | this function should never be called because it walks the complete formula
+positive_units = polar_units True
+
+-- | this function should never be called because it walks the complete formula
+negative_units = polar_units False
 
 without clause  v = M.delete v clause
 
-clauses f = M.elems $ back f
-literals cl =
-  map (\(v,b) -> literal b v ) $ M.toList cl
+literals cl = map (\(v,b) -> literal b v ) $ M.toList cl
 
 -- | some empty clause
 contradictory :: Form -> Bool
@@ -120,13 +174,6 @@ contradictory f =
 -- | no clauses at all
 satisfied :: Form -> Bool
 satisfied f = M.null $ back f
-
--- | all unit clauses
-unit_clauses :: Form -> [(V,Bool)]
-unit_clauses f = M.fold
-   ( \ v m -> case M.toList v of
-        [ (k,b) ] -> (k,b) : m
-        _ -> m ) [] $ back f
 
 -- | note: for efficiency, should return the set of
 -- clauses that were changed (instead of all)
@@ -171,7 +218,6 @@ drop_variable_only =  checked "drop_variable_only" $
 
 
 -- * ops for building the formula
-
 
 add_variable :: Form -> (Form, V)
 add_variable f =

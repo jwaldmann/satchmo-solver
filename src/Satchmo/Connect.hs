@@ -6,8 +6,8 @@
 
 module Satchmo.Connect where
 
-import Satchmo.Graph
-import qualified Data.EnumMap as M
+import Satchmo.Form
+import qualified Data.EnumMap as E
 import Satchmo.Fourier_Motzkin
 
 import Satchmo.MonadSAT
@@ -27,28 +27,28 @@ newtype S a = S (State Form a) deriving
 instance MonadSAT S where
   fresh = do
     f <- get
-    let (g, V v) = add_variable f
+    let (g, v) = add_variable f
     put g
-    return $ literal True v
+    return $ literal True $ fromEnum v
   
   emit cl = do
     modify $ add_clause (SD.literals cl)
 
 
-solve :: S (Reader (M.Map V Bool) a) -> IO (Maybe a)
+solve :: S (Reader (E.Map V Bool) a) -> IO (Maybe a)
 solve (S ff) = do
-  let (r,s1) = runState ff cnf0
+  let (r,s1) = runState ff Satchmo.Form.empty
   -- print s1
   res <- fomo s1
   return $ case res of
     Nothing -> Nothing
     Just m -> Just $ runReader r m 
   
-instance Decode (Reader (M.Map V Bool)) Boolean Bool where 
+instance Decode (Reader (E.Map V Bool)) Boolean Bool where 
   decode b = case b of
     Constant c -> return c
     Boolean l -> do
       m <- ask
-      let v = M.findWithDefault False ( variable l ) m
+      let v = E.findWithDefault False ( variable l ) m
       return $ if positive l then v else not v
 

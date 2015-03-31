@@ -3,8 +3,8 @@
 
 name:                satchmo-solver
 version:             0.1.0.0
--- synopsis:            
--- description:         
+synopsis:            purely functional SAT solver
+description:         purely functional SAT solver
 license:             GPL-3
 license-file:        LICENSE
 author:              Johannes Waldmann
@@ -15,17 +15,21 @@ build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
 
+source-repository head
+  type: git
+  location: https://github.com/jwaldmann/satchmo-solver
+
 library
   hs-source-dirs: src
   exposed-modules:    
     Satchmo.Fourier_Motzkin,
-    Satchmo.Graph,
+    Satchmo.Form,
     Satchmo.Connect,
     Satchmo.Parse,
     Data.EnumMap
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base,
+  build-depends:       base==4.*,
        satchmo,
        containers, bytestring, attoparsec,
        mtl
@@ -37,6 +41,8 @@ executable satchmo-solver
   main-is: Solver.hs
   build-depends: base, satchmo-solver, bytestring
   ghc-options: -rtsopts
+  default-language: Haskell2010
+
 
 Test-Suite Ramsey
   type: exitcode-stdio-1.0
@@ -44,6 +50,7 @@ Test-Suite Ramsey
   main-is: Ramsey.hs
   build-depends: base, array, satchmo-solver, satchmo
   ghc-options: -rtsopts
+  default-language: Haskell2010	
 
 Test-Suite Factor
   type: exitcode-stdio-1.0
@@ -51,4 +58,5 @@ Test-Suite Factor
   main-is: Factor.hs
   build-depends: base, array, satchmo-solver, satchmo
   ghc-options: -rtsopts
+  default-language: Haskell2010
   

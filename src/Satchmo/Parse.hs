@@ -3,7 +3,7 @@
 
 module Satchmo.Parse where
 
-import Satchmo.Graph
+import Satchmo.Form
 import Satchmo.Data
 
 import qualified Data.ByteString.Lazy as BS
@@ -22,7 +22,7 @@ form s = foldl' ( \ f line ->
        let cl = map (\ n -> literal (n>0) (abs n) )
               $ takeWhile (/= 0) ns
        in  add_clause cl f 
-                ) cnf0
+                ) Satchmo.Form.empty
    $ BSC.lines s
 
 pline :: A.Parser [Int]

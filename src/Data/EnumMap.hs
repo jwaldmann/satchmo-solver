@@ -31,6 +31,8 @@ insert k v (Map m) = Map $ IM.insert (fromEnum k) v m
 size (Map m) = IM.size m
 null (Map m) = IM.null m
 elems (Map m) = IM.elems m
+
+filter :: Enum k => (v -> Bool) -> Map k v -> Map k v
 filter p (Map m) = Map $ IM.filter p m
 delete k (Map m) = Map $ IM.delete (fromEnum k) m
 fold f z (Map m) = IM.fold f z m
@@ -43,7 +45,6 @@ intersection (Map m1) (Map m2) = Map $ IM.intersection m1 m2
 adjust :: Enum k => (v -> v) -> k -> Map k v -> Map k v
 adjust f k (Map m) = Map $ IM.adjust f (fromEnum k) m
 
-
 alter  f k (Map m) = Map $ IM.alter f (fromEnum k) m
 
 keys :: Enum k => Map k v -> [k]
@@ -51,3 +52,9 @@ keys (Map m) = P.map toEnum $ IM.keys m
 
 map :: Enum k => (v -> w) -> Map k v -> Map k w
 map f (Map m) = Map $ IM.map f m
+
+mapWithKey :: Enum k => (k -> v -> w) -> Map k v -> Map k w
+mapWithKey f (Map m) = Map $ IM.mapWithKey ( \ k v -> f (toEnum k) v ) m
+
+findMin (Map m) = IM.findMin m
+findMax (Map m) = IM.findMax m

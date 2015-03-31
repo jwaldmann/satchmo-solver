@@ -3,11 +3,11 @@
 
 module Satchmo.Fourier_Motzkin where
 
-import Satchmo.Graph
+import Satchmo.Form
 import Satchmo.Data (Variable,variable,positive)
 
-import qualified Data.EnumMap as M
-import qualified Data.Map.Strict as DM
+import qualified Data.Map.Strict as M
+import qualified Data.EnumMap as E
 
 import Control.Monad ( guard, when )
 import Data.Monoid
@@ -15,10 +15,11 @@ import Data.List ( maximumBy, minimumBy )
 import Data.Function (on)
 import System.IO
 
-type Solver = Form -> IO (Maybe (M.Map V Bool))
+type Solver = Form -> IO (Maybe (E.Map V Bool))
 
 fomo :: Solver
 fomo cnf = do
+  -- hPutStr stderr $ show (size cnf) ++ ","
   -- print_info "fomo" cnf
   (   trivial
     $ unitprop
@@ -34,7 +35,7 @@ trivial :: Solver -> Solver
 trivial cont cnf = do
   -- print_info "trivial" cnf
   if satisfied cnf
-     then return $ Just M.empty
+     then return $ Just E.empty
      else if contradictory cnf
           then return $ Nothing
           else cont cnf
@@ -42,18 +43,11 @@ trivial cont cnf = do
 unitprop :: Solver -> Solver
 unitprop cont f = do
   -- print_info "unitprop" f
-  -- FIXME: toList is inefficient here:
-  let punits = M.fromList $ do
-        (c,m) <- M.toList $ back f
-        [(v,True)] <- return $ M.toList m
-        return (v,True)
-      nunits = M.fromList $ do
-        (c,m) <- M.toList $ back f
-        [(v,False)] <- return $ M.toList m
-        return (v,False)
-      conflicting = not $ M.null $ M.intersection punits nunits
-      units = M.union punits nunits
-  if M.null units
+  let punits = positive_units f
+      nunits = negative_units f
+      conflicting = not $ E.null $ E.intersection punits nunits
+      units = E.union punits nunits
+  if E.null units
     then cont f
     else do
       -- print ("units", units :: M.Map V Bool )
@@ -62,30 +56,29 @@ unitprop cont f = do
            -- hPutStrLn stderr "conflict"
            return Nothing
          else do
-           later <- fomo $ foldr assign f $ M.toList units
-           return $ fmap ( M.union units ) later
+           later <- fomo $ foldr assign f $ E.toList units
+           return $ fmap ( E.union units ) later
 
 eliminate :: Int -> Solver -> Solver
 eliminate bound cont nf = do
   -- print_info "eliminate" nf
-  let reductions = M.map ( \ m ->
-        let pos = length $ filter snd $ M.toList m
-            neg = M.size m - pos
-        in pos*neg - pos - neg ) $ fore nf
+  let reductions = E.mapWithKey ( \ v () ->
+        let pos = E.size $ positive_clauses_for v nf
+            neg = E.size $ negative_clauses_for v nf
+        in pos*neg - pos - neg ) $ variables nf 
       (v,c) = minimumBy (compare `on` snd)
-            $ M.toList reductions
-      m = fore nf M.! v
-      pos = map fst $ filter snd       $ M.toList m
-      neg = map fst $ filter (not.snd) $ M.toList m
+            $ E.toList reductions
+      pos = E.keys $ positive_clauses_for v nf
+      neg = E.keys $ negative_clauses_for v nf
       -- TODO:check for duplicate clauses
       resolved = do
-        cp <- map (back nf M.! ) pos
+        cp <- map (get_clause nf) pos
         let cpv = cp `without` v
-        cn <- map (back nf M.! ) neg
+        cn <- map (get_clause nf) neg
         let cnv = cn `without` v
-        guard $ M.intersection cpv cnv
-             == M.intersection cnv cpv
-        return $ M.union cpv cnv
+        guard $ E.intersection cpv cnv
+             == E.intersection cnv cpv
+        return $ E.union cpv cnv
   -- print ("v/c", v,c)
   -- print ("pos/neg", pos, neg)
   -- print ("resolved", resolved :: [M.Map V Bool ])
@@ -97,20 +90,19 @@ eliminate bound cont nf = do
       let res = add_clauses resolved $ drop_variable v nf
       -- print res
       let reconstruct v m = Prelude.or $ do
-            cp <- map (back nf M.!) pos 
+            cp <- map (get_clause nf) pos 
             return $ Prelude.not $ Prelude.or $ do
               lit <- literals $ cp `without` v
-              let v = M.findWithDefault False ( variable lit ) m
+              let v = E.findWithDefault False ( variable lit ) m
               return $ if positive lit then v else Prelude.not v 
-      when False $ do
-        hPutStrLn stderr $ unwords
+      when False $ hPutStrLn stderr $ unwords
           [ "best resolution:", show v, "count", show c ]
-        hPutStr stderr $ unwords
+      when False $ hPutStr stderr $ unwords
           [ "R", show v , show (size nf, size res) ]
    
       later <- fomo res
       return $ fmap
-                    ( \ m -> M.insert v (reconstruct v m) m)
+                    ( \ m -> E.insert v (reconstruct v m) m)
                     later
 
 islongerthan k xs = not $ null $ drop k xs
@@ -119,14 +111,16 @@ branch cnf = do
   -- print_info "branch" cnf
 
   -- this gives nice results, but is costly:
-  let stat = DM.fromListWith (+) $ do
-        (c,m) <- M.toList $ back cnf
+  let stat :: M.Map (V,Bool) Double
+      stat = M.fromListWith (+) $ do
+        (c,()) <- E.toList $ clauses cnf
+        let m = get_clause cnf c
         let w = -- 2 ^^ negate (M.size m)
-              1 / fromIntegral (M.size m)
-        (v,b) <- M.toList m        
+              1 / fromIntegral (E.size m)
+        (v,b) <- E.toList m        
         return ((v,b), w)
       ((v,p),w) = maximumBy (compare `on` snd)
-                  $ DM.toList stat
+                  $ M.toList stat
 {-
 
   let (v,m) = maximumBy (compare `on` (M.size.snd)) 
@@ -134,11 +128,11 @@ branch cnf = do
       p = M.size (M.filter id m) > M.size (M.filter not m)
 -}
 
-  hPutStr stderr $ unwords [ "D", show v, show p ]
+  -- hPutStr stderr $ unwords [ "D", show v, show p ]
   a <- fomo $ assign (v, p) cnf
   case a of
-    Just m -> return $ Just $ M.insert v p m
+    Just m -> return $ Just $ E.insert v p m
     Nothing -> do
-      hPutStr stderr $ unwords [ "D", show v, show $ not p ]
+      -- hPutStr stderr $ unwords [ "D", show v, show $ not p ]
       b <- fomo $ assign (v, not p) cnf
-      return $ fmap (M.insert v $ not p) b
+      return $ fmap (E.insert v $ not p) b
