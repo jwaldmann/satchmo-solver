@@ -27,4 +27,40 @@ data Form  =
          , back :: ! (M.Map C ( M.Map V Bool ))
          }
 \end{verbatim}
+This representation allows to efficiently
+\begin{itemize}
+\item given the variable, find all the clauses where it appears
+\item given the clause, find all the variables that appear in it
+\end{itemize}
 
+This is used, e.g., in assigning a variable
+\begin{verbatim}
+assign :: (V, Bool) -> Form -> Form
+assign (v, b) f =
+  let cpos = M.filter (==b) $ fore f M.! v
+      cneg = M.filter (/=b) $ fore f M.! v
+      back' = foldr ( \ c m -> M.adjust (M.delete v) c m )
+          (back f) (M.keys cneg)
+      g = f { fore = M.delete v $ fore f 
+            , back = back'
+            }
+  in  foldr drop_clause g (M.keys cpos)
+\end{verbatim}
+
+The representation does not allow to find unit clauses efficiently,
+we can onyl write
+\begin{verbatim}
+units f = M.filter ( \ m -> 1 == M.size m ) $ back f
+\end{verbatim}
+which visits all clauses. This must clearly by improved,
+and one way to do this, is to add another index.
+\begin{verbatim}
+data Form  =
+    Form { ...
+         , by_size :: M.Map Int (Set C)
+         }
+\end{verbatim}
+with the invariant that (roughly)
+\begin{verbatim}
+(c,m)  `elem`  M.toList back f <==>  (c,M.size m) `elem` M.toList by_size f
+\end{verbatim}
