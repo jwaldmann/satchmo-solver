@@ -32,10 +32,19 @@ import Prelude
 import Satchmo.Data (literal, variable,positive, Literal,Clause)
 
 import qualified Data.EnumMap as M
+import qualified Data.EnumSet as S
 import Data.List ( sortBy )
 import Data.Function (on)
 import Control.Monad ( guard )
-import qualified Data.Set as S
+
+-- this is only needed for testing the invariant
+import qualified Data.Set as DS
+import qualified Data.Map as DM
+
+-- * performance critical (DON'T FORGET)
+
+check_asserts = False
+
 
 -- * data type and elementary ops
 
@@ -52,6 +61,7 @@ data Form  =
          , next_var :: V
          , back :: ! (M.Map C ( M.Map V Bool ))
          , next_clause :: C
+         , by_size :: ! (M.Map Int (S.Set C))
          }
   -- deriving Show
 
@@ -70,8 +80,8 @@ get_clause f c =
 -- raise error (with msg) if they do not hold.
 checked :: Show a
   => String -> (a -> Form -> Form) -> (a -> Form -> Form)
-checked = unchecked_
-
+checked =  if check_asserts then checked_ else unchecked_
+       
 unchecked_ msg fun arg f = fun arg f
 
 checked_ msg fun arg f = id
@@ -81,25 +91,47 @@ checked_ msg fun arg f = id
   $ f 
 
 invariant :: String -> Form -> Form
-invariant msg f =   
-  let forward = S.fromList $ do
+invariant msg = invariant_by_size msg
+              . invariant_back_and_fore msg
+
+invariant_by_size msg f =   
+  let actual = DM.filter (not . DS.null)
+             $ DM.fromListWith DS.union $ do
+        (c,m) <- M.toList $ back f
+        return (M.size m, DS.singleton c)
+      indexed = DM.filter (not . DS.null)
+              $ DM.fromListWith DS.union $ do
+        (s,cs) <- M.toList $ by_size f
+        return (s, DS.fromList $ S.toList cs)
+      whine = unlines [ msg
+          , "invariant_by_size violated"
+          , "actual " ++ show actual
+          , "indexed " ++ show indexed
+          , "formula " ++ show (toList f)
+          ]
+  in  if actual == indexed 
+      then f else error whine
+
+invariant_back_and_fore msg f =   
+  let forward = DS.fromList $ do
         (v,m) <- M.toList $ fore f
         (c,b) <- M.toList m
         return (v,b,c)
-      backward = S.fromList $ do
+      backward = DS.fromList $ do
         (c,m) <- M.toList $ back f
         (v,b) <- M.toList m
         return (v,b,c)
-      f_not_b = S.difference forward backward
-      b_not_f = S.difference backward forward
+      f_not_b = DS.difference forward backward
+      b_not_f = DS.difference backward forward
       whine = unlines [ msg
+                      , "invariant_back_and_fore violated"
           , "missing clauses " ++ show f_not_b
           , "missing variabl " ++ show b_not_f
           , "fore " ++ show (fore f)
           , "back " ++ show (back f)
-          , show (toList f)
+          , "formula " ++ show (toList f)
           ]
-  in  if S.null f_not_b && S.null b_not_f
+  in  if DS.null f_not_b && DS.null b_not_f
       then f else error whine
 
 instance Show Form where
@@ -121,6 +153,7 @@ empty = Form
   , next_var = V 1
   , back = M.empty
   , next_clause = C 1
+  , by_size = M.empty
   }
 
 conflict :: Form
@@ -129,6 +162,7 @@ conflict = Form
   , next_var = V 1
   , back = M.singleton (C 1) M.empty
   , next_clause = C 2
+  , by_size = M.singleton 0 $ S.singleton (C 1)
   }
 
 -- * ops that are useful for the solver
@@ -178,16 +212,24 @@ satisfied f = M.null $ back f
 -- | note: for efficiency, should return the set of
 -- clauses that were changed (instead of all)
 assign :: (V, Bool) -> Form -> Form
-assign (v, b) f =
+assign = checked "assign" $ \ (v, b) f ->
   let cpos = M.filter (==b) $ fore f M.! v
       cneg = M.filter (/=b) $ fore f M.! v
-      back' = foldr ( \ c m -> M.adjust (M.delete v) c m )
-          (back f) (M.keys cneg)
-      g = f { fore = M.delete v $ fore f 
-            , back = back'
-            }
-  in  foldr drop_clause g (M.keys cpos)
-  
+      g = foldr drop_clause f (M.keys cpos)
+      back' = foldr ( \ c m -> M.adjust (M.delete v) c m ) (back g) (M.keys cneg)
+  in  g { fore = M.delete v $ fore g
+        , back = back'
+        , by_size = foldr ( \ c b ->
+              let new = M.size $ back' M.! c
+                  old = succ new
+              in M.alter ( Just . \ case
+                      Nothing -> S.singleton c
+                      Just s -> S.insert c s ) new
+                 $ M.adjust ( S.delete c ) old
+                 $ b
+                 ) (by_size g) (M.keys cneg)
+        }
+
 
 -- | new clauses that refer to existing variables
 add_clauses :: [ M.Map V Bool ] -> Form -> Form
@@ -199,11 +241,12 @@ add_clauses = checked "add_clauses" $ \ cls f ->
 -- | drop this clause (and all refs to it)
 drop_clause :: C -> Form -> Form
 drop_clause = checked "drop_clause" $
-   \ c f -> 
+   \ c f ->
+   let m = back f M.! c in
   f { fore = foldr ( \ v m -> M.adjust (M.delete c) v m )
-        (fore f)
-             (M.keys $ back f M.! c)
+        (fore f) (M.keys m )
     , back = M.delete c $ back f
+    , by_size = M.adjust ( S.delete c ) (M.size m) $ by_size f
     }
 
 -- | drop this variable and all clauses where it occurs.
@@ -226,14 +269,17 @@ add_variable f =
           , next_var = succ $ next_var f
           } , V v )
 
+-- | clause and variable must already exist
 add_edge :: (V,Bool,C) -> Form -> Form
-add_edge = checked "add_edge" $ \ (v,b,c) f -> 
-  f { fore = M.alter ( \ case 
-         Nothing -> Just $ M.singleton c b
-         Just m -> Just $ M.insert c b m ) v $ fore f
-    , back = M.alter ( \ case
-         Nothing -> Just $ M.singleton v b
-         Just m -> Just $ M.insert v b m ) c $ back f
+add_edge = checked "add_edge" $ \ (v,b,c) f ->
+  let m = back f M.! c in
+  f { fore = M.adjust ( M.insert c b ) v $ fore f
+    , back = M.adjust ( M.insert v b ) c $ back f
+    , by_size = M.alter ( Just . \ case
+         Nothing -> S.singleton c
+         Just s -> S.insert c s ) (succ $ M.size m)
+                $ M.adjust (S.delete c) (M.size m)
+                $ by_size f
     }
 
 add_clause :: [Literal] -> Form -> Form
@@ -243,9 +289,14 @@ add_clause = checked "add_clause" $ \ cl f ->
             add_edge (V $ variable l,positive l,c) f)
           -- following is important for adding the empty clause
           -- FIXME which should be handled specially
-          ( f { back = M.insert c M.empty $ back f } )
+          ( f { back = M.insert c M.empty $ back f
+              , by_size = M.alter ( \ m -> Just $ case m of
+                                       Nothing -> S.singleton c
+                                       Just s -> S.insert c s ) 0 $ by_size f
+              } )
           cl
-  in  g { next_clause = succ $ next_clause g }
+  in  g { next_clause = succ $ next_clause g
+        }
     
 
 {-

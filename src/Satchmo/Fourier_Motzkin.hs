@@ -19,21 +19,22 @@ type Solver = Form -> IO (Maybe (E.Map V Bool))
 
 fomo :: Solver
 fomo cnf = do
-  -- hPutStr stderr $ show (size cnf) ++ ","
-  -- print_info "fomo" cnf
+  print_info "fomo" cnf
   (   trivial
     $ unitprop
     $ eliminate 10
     $ branch ) cnf
 
-print_info msg cnf = do
+logging = False
+
+print_info msg cnf = when logging $ do
   hPutStrLn stderr $ unwords [ msg, show $ size cnf, "\n" ]
-  -- hPutStrLn stderr $ show cnf ++ "\n"
+  hPutStrLn stderr $ show cnf ++ "\n"
 
 
 trivial :: Solver -> Solver
 trivial cont cnf = do
-  -- print_info "trivial" cnf
+  print_info "trivial" cnf
   if satisfied cnf
      then return $ Just E.empty
      else if contradictory cnf
@@ -42,7 +43,7 @@ trivial cont cnf = do
 
 unitprop :: Solver -> Solver
 unitprop cont f = do
-  -- print_info "unitprop" f
+  print_info "unitprop" f
   let punits = positive_units f
       nunits = negative_units f
       conflicting = not $ E.null $ E.intersection punits nunits
@@ -50,10 +51,10 @@ unitprop cont f = do
   if E.null units
     then cont f
     else do
-      -- print ("units", units :: M.Map V Bool )
+      when logging $ print ("units", units :: E.Map V Bool )
       if conflicting
          then do
-           -- hPutStrLn stderr "conflict"
+           when logging $ do hPutStrLn stderr "conflict"
            return Nothing
          else do
            later <- fomo $ foldr assign f $ E.toList units
@@ -61,7 +62,7 @@ unitprop cont f = do
 
 eliminate :: Int -> Solver -> Solver
 eliminate bound cont nf = do
-  -- print_info "eliminate" nf
+  print_info "eliminate" nf
   let reductions = E.mapWithKey ( \ v () ->
         let pos = E.size $ positive_clauses_for v nf
             neg = E.size $ negative_clauses_for v nf
@@ -81,7 +82,7 @@ eliminate bound cont nf = do
         return $ E.union cpv cnv
   -- print ("v/c", v,c)
   -- print ("pos/neg", pos, neg)
-  -- print ("resolved", resolved :: [M.Map V Bool ])
+  when logging $ do print ("resolved", resolved :: [E.Map V Bool ])
 
   if c > bound
     then cont nf
@@ -95,9 +96,9 @@ eliminate bound cont nf = do
               lit <- literals $ cp `without` v
               let v = E.findWithDefault False ( variable lit ) m
               return $ if positive lit then v else Prelude.not v 
-      when False $ hPutStrLn stderr $ unwords
+      when logging $ hPutStrLn stderr $ unwords
           [ "best resolution:", show v, "count", show c ]
-      when False $ hPutStr stderr $ unwords
+      when logging $ hPutStr stderr $ unwords
           [ "R", show v , show (size nf, size res) ]
    
       later <- fomo res
@@ -108,7 +109,7 @@ eliminate bound cont nf = do
 islongerthan k xs = not $ null $ drop k xs
 
 branch cnf = do
-  -- print_info "branch" cnf
+  print_info "branch" cnf
 
   -- this gives nice results, but is costly:
   let stat :: M.Map (V,Bool) Double
@@ -128,11 +129,11 @@ branch cnf = do
       p = M.size (M.filter id m) > M.size (M.filter not m)
 -}
 
-  -- hPutStr stderr $ unwords [ "D", show v, show p ]
+  when logging $ do hPutStr stderr $ unwords [ "D", show v, show p ]
   a <- fomo $ assign (v, p) cnf
   case a of
     Just m -> return $ Just $ E.insert v p m
     Nothing -> do
-      -- hPutStr stderr $ unwords [ "D", show v, show $ not p ]
+      when logging $ do hPutStr stderr $ unwords [ "D", show v, show $ not p ]
       b <- fomo $ assign (v, not p) cnf
       return $ fmap (E.insert v $ not p) b

@@ -10,17 +10,28 @@ fromList xs = Set $ I.fromList $ map fromEnum xs
 toList (Set s) = map toEnum $ I.toList s
 
 null (Set s) = I.null s
-empty = Set I.empty
 
+singleton :: Enum k => k -> Set k
+singleton x = Set $ I.singleton $ fromEnum x
+
+empty = Set I.empty
 member k (Set s) = I.member (fromEnum k) s
 notMember k (Set s) = I.notMember (fromEnum k) s
 isSubsetOf (Set s1) (Set s2) = I.isSubsetOf s1 s2
 
+insert :: Enum k => k -> Set k -> Set k
 insert k (Set s) = Set $ I.insert (fromEnum k) s
+
+delete :: Enum k => k -> Set k -> Set k
 delete k (Set s) = Set $ I.delete (fromEnum k) s
 
+union :: Enum k => Set k -> Set k -> Set k
 union (Set s1) (Set s2) = Set $ I.union s1 s2
+
+intersection :: Enum k => Set k -> Set k -> Set k
 intersection (Set s1) (Set s2) = Set $ I.intersection s1 s2
+
+difference :: Enum k => Set k -> Set k -> Set k
 difference (Set s1) (Set s2) = Set $ I.difference s1 s2
 
 filter p (Set s) = Set $ I.filter (p . toEnum) s
