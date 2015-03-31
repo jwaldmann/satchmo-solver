@@ -13,9 +13,9 @@ main = do
   -- print f
   res <- fomo f
   case res of
-    Nothing -> do
-      putStrLn "UNSAT"
-    Just m -> do
+    Left rup -> do
+      putStrLn $ unlines $ "UNSAT" : map show (reverse rup)
+    Right m -> do
       putStrLn "SAT"
       print m
       
