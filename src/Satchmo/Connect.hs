@@ -20,6 +20,7 @@ import qualified Satchmo.Data as SD
 import Control.Monad.State.Strict
 import Control.Monad.Reader
 import Control.Applicative
+import System.IO
 
 newtype S a = S (State Form a) deriving
   ( Monad, MonadFix, MonadState Form , Applicative, Functor)
@@ -38,12 +39,14 @@ instance MonadSAT S where
 solve :: S (Reader (E.Map V Bool) a) -> IO (Maybe a)
 solve (S ff) = do
   let (r,s1) = runState ff Satchmo.Form.empty
-  -- print s1
   res <- fomo s1
-  return $ case res of
-    Nothing -> Nothing
-    Just m -> Just $ runReader r m 
-  
+  case res of
+    Left rup -> do
+      hPutStrLn stderr $ unlines $ "not satisfiable, RUP:"
+        : map show (reverse rup)
+      return Nothing
+    Right m -> return $ Just $ runReader r m
+
 instance Decode (Reader (E.Map V Bool)) Boolean Bool where 
   decode b = case b of
     Constant c -> return c

@@ -15,7 +15,11 @@ import Data.List ( maximumBy, minimumBy )
 import Data.Function (on)
 import System.IO
 
-type Solver = Form -> IO (Maybe (E.Map V Bool))
+type Assignment = E.Map V Bool
+type Clause = E.Map V Bool
+type RUP = [Clause]
+type Result = Either RUP Assignment
+type Solver = Form -> IO Result
 
 fomo :: Solver
 fomo cnf = do
@@ -31,14 +35,13 @@ print_info msg cnf = when logging $ do
   hPutStrLn stderr $ unwords [ msg, show $ size cnf, "\n" ]
   hPutStrLn stderr $ show cnf ++ "\n"
 
-
 trivial :: Solver -> Solver
 trivial cont cnf = do
   print_info "trivial" cnf
   if satisfied cnf
-     then return $ Just E.empty
+     then return $ Right E.empty
      else if contradictory cnf
-          then return $ Nothing
+          then return $ Left [E.empty]
           else cont cnf
 
 unitprop :: Solver -> Solver
@@ -55,10 +58,12 @@ unitprop cont f = do
       if conflicting
          then do
            when logging $ do hPutStrLn stderr "conflict"
-           return Nothing
+           return $ Left [E.empty]
          else do
            later <- fomo $ foldr assign f $ E.toList units
-           return $ fmap ( E.union units ) later
+           return $ case later of
+             Left rup -> Left rup
+             Right m -> Right $ E.union units m
 
 eliminate :: Int -> Solver -> Solver
 eliminate bound cont nf = do
@@ -103,28 +108,14 @@ eliminate bound cont nf = do
           [ "R", show v , show (size nf, size res) ]
    
       later <- fomo res
-      return $ fmap
-                    ( \ m -> E.insert v (reconstruct v m) m)
-                    later
+      return $ case later of
+        Left rup -> Left rup -- FIXME
+        Right m -> Right $ E.insert v (reconstruct v m) m
 
 islongerthan k xs = not $ null $ drop k xs
 
 branch cnf = do
   print_info "branch" cnf
-
-{-
-  -- this gives nice results, but is costly:
-  let stat :: M.Map (V,Bool) Double
-      stat = M.fromListWith (+) $ do
-        (c,()) <- E.toList $ clauses cnf
-        let m = get_clause cnf c
-        let w = -- 2 ^^ negate (M.size m)
-              1 / fromIntegral (E.size m)
-        (v,b) <- E.toList m        
-        return ((v,b), w)
-      ((v,p),w) = maximumBy (compare `on` snd)
-                  $ M.toList stat
--}
 
   let stat :: M.Map (V,Bool) Double
       stat = M.fromListWith (+) $ do
@@ -142,8 +133,12 @@ branch cnf = do
   when logging $ do hPutStr stderr $ unwords [ "D", show v, show p ]
   a <- fomo $ assign (v, p) cnf
   case a of
-    Just m -> return $ Just $ E.insert v p m
-    Nothing -> do
+    Right m -> return $ Right $ E.insert v p m
+    Left rupl -> do
       when logging $ do hPutStr stderr $ unwords [ "D", show v, show $ not p ]
       b <- fomo $ assign (v, not p) cnf
-      return $ fmap (E.insert v $ not p) b
+      case b of
+        Right m -> return $ Right $ E.insert v (not p) m
+        Left rupr -> return $ Left
+          $ E.empty : map (E.insert v       p) rupl
+                   ++ map (E.insert v $ not p) rupr
