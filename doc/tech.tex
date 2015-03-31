@@ -1,0 +1,41 @@
+\section{Haskell Technicalities}
+
+This section is for discussion of implementation detail
+that is not interesting for SAT.
+
+\subsection{EnumMap}
+
+The \verb|containers| package provides the \verb|Data.IntMap| module
+(big-endian patricia trees) and the type, and some methods, are:
+\begin{verbatim}
+module Data.IntMap where
+data IntMap a
+type Key = Int
+lookup :: Key -> IntMap a -> Maybe a 
+insert :: Key -> a -> IntMap a -> IntMap a 
+unionWith :: (a -> a -> a) -> IntMap a -> IntMap a -> IntMap a 
+\end{verbatim}
+This directly represents the underlying idea: keys are indeed numbers,
+and their binary representation is used for efficient implementation.
+
+It is not so nice from a programmer's standpoint.
+We want to represent a bipartite graph.
+We want to distinguish the nodes (variables or clauses) by type:
+\begin{verbatim}
+newtype V = V Int deriving (Enum, Show, Eq, Ord)
+newtype C = C Int deriving (Enum, Show, Eq, Ord)
+\end{verbatim}
+So we want to use \verb|V| and \verb|C| as keys for IntMaps,
+but we cannot, as the key type is not polymorphic.
+Well, we can, by introducing a wrapper
+\begin{verbatim}
+module Data.EnumMap where
+import qualified Data.IntMap as IM
+newtype Map k v = Map (IM.IntMap v)  deriving (Eq, Ord)
+insert :: Enum a => a -> v -> Map t v -> Map k v
+insert k v (Map m) = Map $ IM.insert (fromEnum k) v m
+union :: Map t v -> Map t1 v -> Map k v
+union (Map m1) (Map m2) = Map $ IM.union m1 m2
+\end{verbatim}
+Here, \verb|k| acts as a phantom type, it is only used 
+to select the \verb|Enum| instance for wrapping and unwrapping the keys.

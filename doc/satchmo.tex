@@ -1,0 +1,43 @@
+\section{Experiments}
+
+The solver code is at \url{https://github.com/jwaldmann/satchmo-solver}
+and can be built with \verb|git clone; cabal install|.
+It contains a stand-alone executable (reads DIMACS format),
+and also a Haskell API that allows to construct the CNF via
+\url{https://github.com/jwaldmann/satchmo}, and then call the solver.
+
+For example, we have this test case
+\begin{verbatim}
+-- satchmo for constructing formulas:
+import Satchmo.Binary.Op.Fixed
+import qualified Satchmo.Binary.Op.Flexible
+import Satchmo.Boolean hiding ( equals )
+import Satchmo.Code
+
+-- interface to the purely functional solver:
+import Satchmo.Connect (solve)
+
+main = solve $ factor 1001
+
+factor n = do
+  x <- Satchmo.Binary.Op.Flexible.constant n
+  a <- number $ width x
+  notone a
+  b <- number $ width x
+  notone b
+  ab <- times a b
+  monadic assert [ equals ab x ]
+  return $ decode [ a, b ]
+
+notone f = do
+  one <- Satchmo.Binary.Op.Flexible.constant 1
+  e <- equals f one
+  assert [ not e ]
+\end{verbatim}
+This framework can be used to compare our pure solver with minisat,
+which is also available through satchmo:
+just replace the import declaration with 
+\begin{verbatim}
+import Satchmo.SAT.Mini (solve)
+\end{verbatim}
+

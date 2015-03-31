@@ -1,0 +1,30 @@
+\section{Representation of Data in the Solver}
+
+In the classical approach, the solver has a state that is held 
+in global (or instance-specific) arrays, and which is modified.
+The state consists mainly of (TODO: verify this)
+clever pointer and index structures that refer to a set of clauses
+(e.g., the ``two watched literals'' scheme to quickyl detect unit clauses
+when they appear as a result of propagations).
+
+In the pure approach, the ``current'' set of clauses is represented
+by a persistent map (a collection of such). We still need ``clever pointing'' 
+because we absolutely should avoid walking all elements of the map.
+
+The basic model is to view the clause set as a bipartite graph
+$(G_1,G_2,E)$ where edges are 2-coloured:
+the vertices are partitioned into variables and clauses,
+and there is an edge from $v$ to $c$ with colour $b$,
+if $v$ occurs in $c$ with polarity $b$ 
+(e.g., positive: colour ``+'', negative : colour ``-'')
+
+This can be represented in Haskell as follows
+\begin{verbatim}
+newtype V = V Int deriving (Enum, Show, Eq, Ord)
+newtype C = C Int deriving (Enum, Show, Eq, Ord)
+data Form  =
+    Form { fore :: ! (M.Map V ( M.Map C Bool ))
+         , back :: ! (M.Map C ( M.Map V Bool ))
+         }
+\end{verbatim}
+

@@ -1,0 +1,79 @@
+\section{Introduction}
+
+The SAT problem is: \emph{given a propositional logic formula $F$ in conjunctive
+normal form, find a satisfying assignment, or a proof that none exists}.
+
+SAT is of great practical importance, since it has applications in
+verification of hardware (digital circuits) and software (bounded model checking).
+
+A SAT solver is a program that solves instances of this problem.
+There are regular competitions for SAT solvers (SAT competition, SAT race).
+Over the years, these competitions confirm that two basic ideas are the foundation 
+for successful SAT solvers: the DPLL algorithm (Davis, Putnam, Logemann, Loveland),
+which describes unit propagation and backtracking,
+and CDCL (conflict driven clause learning).
+Also, it the consensus seems to be that competitive implementations
+use low-level imperative languages like C (minisat, lingeling).
+
+In the present paper, we explore an alternative approach: 
+implement a SAT solver in a high-level functional language (in fact, Haskell).
+
+This is motivated by
+\begin{itemize}
+\item educational value:
+  it is hoped that the source code is more concise,
+  and shows more clearly the algorithmic ideas.
+  (allowing students of my course on constraint programming
+  to understand the code, and experiment with it).
+
+  For instance, the main part of the solver looks like this
+\begin{verbatim}
+fomo :: Solver
+fomo cnf = ( trivial $ unitprop $ eliminate 10 $ branch ) cnf
+\end{verbatim}
+where \verb|eliminate n| is the transformation of completely resolving
+all variables where that resolution produces at most 10 extra clauses.
+\item flexibility:
+  it is hoped that this conciseness of expression, and absence of side effects, 
+  allows for easier modifications in the algorithms.
+  For example, \verb|$ eliminite 10| can easily be removed from the pipeline.
+\item correctness:
+  a purely functional approach makes it much easier to state and verify properties
+  of the implementation (on any level, from unit tests to a fully formal proof of
+  correctness). This is of educational value for standard DPLL/CDCL,
+  but becomes more interesting for extensions.
+\item benchmarking:
+  the code will make for good test cases for Haskell code generation,
+  and efficiency of Haskell implementations of data structures.
+  E.g., the current implementation uses \verb|Data.IntMap| (big-endian patricia trees)
+  \url{http://hackage.haskell.org/package/containers-0.5.6.3/docs/Data-IntMap-Strict.html}
+\end{itemize}
+
+As anecdotal evidence for non-flexibility of the classical 
+(imperative, low-level) approach, we cite Mate Soos 
+who extended minisat by native support for XOR clauses,
+but later removed that extension, giving as a reason (with my emphasis)
+\begin{quote}
+  Loss of simplicity\dots The state of the solver goes through many transformations
+  \dots The more complex the state, the larger and the more complex the code. 
+  While a simple clause-cleaning algorithm can be expressed in about 20 lines of code 
+  without implicit binary and tertiary clauses, 
+  the same algo blows up to about 100 lines of code with those optimizations. 
+  Once you add XOR clauses, it jumps to around double that. 
+  \emph{We just made our code 10x larger}. \dots
+
+  Those who push for these native theories have either not tried implementing them 
+  into a complicated solver such as lingeling/SatELite/CryptoMiniSat/clasp 
+  or have already bit the bullet such as the clasp group and I did, 
+  \emph{and it is probably limiting them in extending the system with new techniques.} 
+  The resulting larger internal state leads to 
+  \emph{edge cases, exceptions, 
+  and much-much more code.}
+\end{quote}
+\url{http://www.msoos.org/2013/08/why-cryptominisat-3-3-doesnt-have-xors/}
+
+Even if the purely functional implementation turns out not to be competitive
+with minisat etc., it might still have practical value as a testbed for new ideas
+that can be formally verified, and later be transformed by hand (if not by compiler)
+to efficient low-level code.
+

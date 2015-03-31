@@ -1,0 +1,37 @@
+\documentclass[12pt]{article}
+\usepackage[text={6in,9in}]{geometry}
+
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage[utf8]{inputenc}
+
+\usepackage[backgroundcolor=white,linecolor=black]{todonotes}
+\newcommand{\comment}[3][]{%
+  \todo[size=\small,#1]{\textbf{[\uppercase{#2}]:}~#3}}
+\newcommand{\EN}[2][]{\comment[#1]{EN}{#2}}
+\newcommand{\JW}[2][]{\comment[#1]{JW}{#2}}
+
+\title{A Purely Functional SAT Solver}
+\author{Johannes Waldmann, Leipzig}
+\date{March 2015}
+
+\bibliographystyle{plain}
+
+\begin{document}
+
+\maketitle
+
+\input{abstract}
+
+\input{intro}
+
+\input{form}
+\input{tech}
+\input{satchmo}
+
+\nocite{*}
+\bibliography{bib}
+
+\end{document}
