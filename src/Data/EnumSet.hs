@@ -1,3 +1,13 @@
+-- | This is a wrapper for Data.IntSet.
+-- It replaces the fixed element type (Int)
+-- with element type (Enum k => k).
+-- Typical usage is for element types like
+-- newtype T = T Int deriving Enum
+-- that give more type safety in application programs,
+-- and toEnum/fromEnum is no-op (hopefully).
+-- Note that some type signatures here (e.g., toList)
+-- are not most general. This is to avoid ambiguity errors.
+
 module Data.EnumSet where
 
 import Prelude hiding (null)

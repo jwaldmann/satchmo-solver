@@ -1,3 +1,13 @@
+-- | This is a wrapper for Data.IntMap.
+-- It replaces the fixed key type (Int)
+-- with a key of type (Enum k => k).
+-- Typical usage is for key types like
+-- newtype T = T Int deriving Enum
+-- that give more type safety in application programs,
+-- and toEnum/fromEnum is no-op (hopefully).
+-- Note that some type signatures here (e.g., toList)
+-- are not most general. This is to avoid ambiguity errors.
+
 {-# language NoMonomorphismRestriction #-}
 
 module Data.EnumMap where
