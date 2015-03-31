@@ -63,7 +63,8 @@ unitprop cont f = do
 eliminate :: Int -> Solver -> Solver
 eliminate bound cont nf = do
   print_info "eliminate" nf
-  let reductions = E.mapWithKey ( \ v () ->
+  let -- this is expensive (visits all variables and clauses) :
+      reductions = E.mapWithKey ( \ v () ->
         let pos = E.size $ positive_clauses_for v nf
             neg = E.size $ negative_clauses_for v nf
         in pos*neg - pos - neg ) $ variables nf 
@@ -111,6 +112,7 @@ islongerthan k xs = not $ null $ drop k xs
 branch cnf = do
   print_info "branch" cnf
 
+{-
   -- this gives nice results, but is costly:
   let stat :: M.Map (V,Bool) Double
       stat = M.fromListWith (+) $ do
@@ -122,12 +124,20 @@ branch cnf = do
         return ((v,b), w)
       ((v,p),w) = maximumBy (compare `on` snd)
                   $ M.toList stat
-{-
-
-  let (v,m) = maximumBy (compare `on` (M.size.snd)) 
-        $ M.toList $ fore cnf
-      p = M.size (M.filter id m) > M.size (M.filter not m)
 -}
+
+  let stat :: M.Map (V,Bool) Double
+      stat = M.fromListWith (+) $ do
+        
+        (c,()) <- E.toList $ smallest_clauses 1000 cnf
+        let m = get_clause cnf c
+        let w = -- 2 ^^ negate (M.size m)
+              1 / fromIntegral (E.size m)
+        (v,b) <- E.toList m        
+        return ((v,b), w)
+      ((v,p),w) = maximumBy (compare `on` snd)
+                  $ M.toList stat
+
 
   when logging $ do hPutStr stderr $ unwords [ "D", show v, show p ]
   a <- fomo $ assign (v, p) cnf

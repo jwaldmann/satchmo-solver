@@ -9,7 +9,7 @@ module Satchmo.Form
 ( Form, V, C -- abstract
 , empty
 , size
-, variables, clauses
+, variables, clauses, smallest_clauses
 , get_clause
 
 , units, positive_units, negative_units
@@ -72,6 +72,13 @@ variables f = M.map (const ()) $ fore f
 -- | this function should never be called because it walks the complete formula
 clauses :: Form -> M.Map C ()
 clauses f = M.map (const ()) $ back f
+
+smallest_clauses :: Int -> Form -> M.Map C ()
+smallest_clauses s f = M.fromList $ take s $ do
+  let (lo,hi) = M.split (s+1) $ by_size f
+  m <- M.elems lo
+  c <- S.toList m
+  return (c, ())
 
 get_clause f c =
   M.findWithDefault (error "get_clause") c $ back f 
@@ -170,6 +177,7 @@ conflict = Form
 clauses_for :: V -> Form -> M.Map C Bool
 clauses_for v f = M.findWithDefault M.empty v $ fore f
 
+-- | FIXME: calling M.filter here is bad for performance
 positive_clauses_for v f = M.filter id  $ clauses_for v f
 negative_clauses_for v f = M.filter not $ clauses_for v f
 
@@ -179,13 +187,13 @@ literals_for c f = M.findWithDefault M.empty c $ back f
 positive_literals_for c f = M.filter id  $ literals_for c f
 negative_literals_for c f = M.filter not $ literals_for c f
 
--- | this function should never be called because it walks the complete formula
-units f = M.filter ( \ m -> 1 == M.size m ) $ back f
+units f = M.findWithDefault S.empty 1 $ by_size f
 
 -- | this function should never be called because it walks the complete formula
 polar_units :: Bool -> Form -> M.Map V Bool
 polar_units p f = M.fromList $ do
-  (c,m) <- M.toList $ units f
+  c <- S.toList $ units f
+  let m = back f M.! c
   let (v,b) = M.findMin m
   guard $ p == b
   return (v,b)
@@ -202,8 +210,7 @@ literals cl = map (\(v,b) -> literal b v ) $ M.toList cl
 
 -- | some empty clause
 contradictory :: Form -> Bool
-contradictory f =
-  M.fold ( \ v m -> M.null v || m ) False $ back f
+contradictory f = not $ S.null $ M.findWithDefault S.empty 0 $ by_size f
 
 -- | no clauses at all
 satisfied :: Form -> Bool

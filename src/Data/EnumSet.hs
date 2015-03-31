@@ -6,7 +6,10 @@ import qualified Data.IntSet as I
 
 newtype Set k = Set (I.IntSet)
 
+fromList :: Enum k => [k] -> Set k
 fromList xs = Set $ I.fromList $ map fromEnum xs
+
+toList :: Enum k => Set k -> [k]
 toList (Set s) = map toEnum $ I.toList s
 
 null (Set s) = I.null s
