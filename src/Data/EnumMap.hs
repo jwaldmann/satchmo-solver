@@ -12,7 +12,7 @@
 
 module Data.EnumMap where
 
-import qualified Data.IntMap as IM
+import qualified Data.IntMap.Strict as IM
 import Prelude hiding ( map )
 import qualified Prelude as P
 
@@ -49,7 +49,7 @@ elems (Map m) = IM.elems m
 filter :: Enum k => (v -> Bool) -> Map k v -> Map k v
 filter p (Map m) = Map $ IM.filter p m
 delete k (Map m) = Map $ IM.delete (fromEnum k) m
-fold f z (Map m) = IM.fold f z m
+-- fold f z (Map m) = IM.fold f z m
 findWithDefault d k (Map m) = IM.findWithDefault d (fromEnum k) m
 difference (Map m1) (Map m2) = Map $ IM.difference m1 m2
 union (Map m1) (Map m2) = Map $ IM.union m1 m2

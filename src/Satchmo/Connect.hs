@@ -41,9 +41,9 @@ solve (S ff) = do
   let (r,s1) = runState ff Satchmo.Form.empty
   res <- fomo s1
   case res of
-    Left rup -> do
+    Left u -> do
       hPutStrLn stderr $ unlines $ "not satisfiable, RUP:"
-        : map show (reverse rup)
+        : map show (reverse $ rup u)
       return Nothing
     Right m -> return $ Just $ runReader r m
 

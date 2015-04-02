@@ -18,7 +18,14 @@ import System.IO
 type Assignment = E.Map V Bool
 type Clause = E.Map V Bool
 type RUP = [Clause]
-type Result = Either RUP Assignment
+
+data Unsat =
+     Unsat { rup :: RUP
+           , learnt :: [Clause]
+           }
+     deriving Show
+
+type Result = Either Unsat Assignment
 type Solver = Form -> IO Result
 
 fomo :: Solver
@@ -41,7 +48,8 @@ trivial cont cnf = do
   if satisfied cnf
      then return $ Right E.empty
      else if contradictory cnf
-          then return $ Left [E.empty]
+          then return $ Left
+               $ Unsat { rup = [E.empty], learnt = [] }
           else cont cnf
 
 unitprop :: Solver -> Solver
@@ -58,11 +66,12 @@ unitprop cont f = do
       if conflicting
          then do
            when logging $ do hPutStrLn stderr "conflict"
-           return $ Left [E.empty]
+           return $ Left
+             $ Unsat { rup = [E.empty], learnt = [] }
          else do
            later <- fomo $ foldr assign f $ E.toList units
            return $ case later of
-             Left rup -> Left rup
+             Left u -> Left u
              Right m -> Right $ E.union units m
 
 eliminate :: Int -> Solver -> Solver
@@ -134,11 +143,14 @@ branch cnf = do
   a <- fomo $ assign (v, p) cnf
   case a of
     Right m -> return $ Right $ E.insert v p m
-    Left rupl -> do
+    Left ul -> do
       when logging $ do hPutStr stderr $ unwords [ "D", show v, show $ not p ]
       b <- fomo $ assign (v, not p) cnf
       case b of
         Right m -> return $ Right $ E.insert v (not p) m
-        Left rupr -> return $ Left
-          $ E.empty : map (E.insert v       p) rupl
-                   ++ map (E.insert v $ not p) rupr
+        Left ur -> return $ Left
+          $ Unsat { rup =  E.empty
+                         : map (E.insert v       p) (rup ul)
+                        ++ map (E.insert v $ not p) (rup ur)
+                  , learnt = []
+                  }
