@@ -13,8 +13,8 @@ main = do
   -- print f
   res <- fomo f
   case res of
-    Left rup -> do
-      putStrLn $ unlines $ "UNSAT" : map show (reverse rup)
+    Left u -> do
+      putStrLn $ unlines $ "UNSAT" : map show (reverse $ rup u)
     Right m -> do
       putStrLn "SAT"
       print m
