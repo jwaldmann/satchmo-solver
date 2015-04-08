@@ -33,7 +33,7 @@ instance MonadSAT S where
     return $ literal True $ fromEnum v
   
   emit cl = do
-    modify $ add_clause (SD.literals cl)
+    modify $ add_clause Input (SD.literals cl)
 
 
 solve :: S (Reader (E.Map V Bool) a) -> IO (Maybe a)

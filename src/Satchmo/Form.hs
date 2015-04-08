@@ -21,6 +21,8 @@ module Satchmo.Form
 , drop_variable, add_variable
 , assign
 
+, Reason (..), Origin (..)
+
 -- * clauses
 , without, literals
 )
@@ -62,8 +64,28 @@ data Form  =
          , back :: ! (M.Map C ( M.Map V Bool ))
          , next_clause :: C
          , by_size :: ! (M.Map Int (S.Set C))
+         , assignment :: ! (M.Map V Bool)
+         , origin :: ! (M.Map C Origin) -- ^ see @Origin@ for possible values.
+             -- the default value is @Input@ (so we can start with an empty map)
+         , reason :: ! (M.Map V Reason)
          }
   -- deriving Show
+
+-- | the origin of clauses. Note: each clause has a number (of type @C@),
+-- these numbers don't change. (new clauses get fresh numbers).
+-- for each time: the current meaning (set of literals) in clause with nr. c
+-- is a substitution instance (a subset of literals) of c's meaning at time of creation.
+--  TODO: expect to add arguments to constructors
+data Origin = Input -- ^ this clause is an element of the input CNF
+            | Resolved C C -- ^ this clause appeared by resolution (elimination)
+            | Learnt -- ^ this clause was learnt
+    deriving ( Eq, Ord, Show )
+
+-- | the reason for the current value of a variable.
+data Reason = Decided -- ^ the value was assigned when entering a subtree
+            | Propagated C -- ^ the value was computed by unit propagation, using clause c
+    deriving ( Eq, Ord, Show )
+             
 
 -- | this function should never be called because it walks the complete formula
 variables :: Form -> M.Map V ()
@@ -161,16 +183,11 @@ empty = Form
   , back = M.empty
   , next_clause = C 1
   , by_size = M.empty
+  , assignment = M.empty
+  , reason = M.empty
+  , origin = M.empty
   }
 
-conflict :: Form
-conflict = Form
-  { fore = M.empty
-  , next_var = V 1
-  , back = M.singleton (C 1) M.empty
-  , next_clause = C 2
-  , by_size = M.singleton 0 $ S.singleton (C 1)
-  }
 
 -- * ops that are useful for the solver
 
@@ -189,20 +206,19 @@ negative_literals_for c f = M.filter not $ literals_for c f
 
 units f = M.findWithDefault S.empty 1 $ by_size f
 
--- | this function should never be called because it walks the complete formula
-polar_units :: Bool -> Form -> M.Map V Bool
+polar_units :: Bool -> Form -> M.Map V (Bool, C)
 polar_units p f = M.fromList $ do
   c <- S.toList $ units f
   let m = back f M.! c
   let (v,b) = M.findMin m
   guard $ p == b
-  return (v,b)
+  return (v,(b,c))
 
--- | this function should never be called because it walks the complete formula
-positive_units = polar_units True
+-- | for the unit clauses with positive literals, compute the clause numbers
+positive_units = M.map snd . polar_units True
 
--- | this function should never be called because it walks the complete formula
-negative_units = polar_units False
+-- | for the unit clauses with negative literals, compute the clause numbers
+negative_units = M.map snd . polar_units False
 
 without clause  v = M.delete v clause
 
@@ -218,8 +234,8 @@ satisfied f = M.null $ back f
 
 -- | note: for efficiency, should return the set of
 -- clauses that were changed (instead of all)
-assign :: (V, Bool) -> Form -> Form
-assign = checked "assign" $ \ (v, b) f ->
+assign :: Reason -> (V, Bool) -> Form -> Form
+assign re = checked ( unwords [ "assign", show re ] ) $ \ (v, b) f ->
   let cpos = M.filter (==b) $ fore f M.! v
       cneg = M.filter (/=b) $ fore f M.! v
       g = foldr drop_clause f (M.keys cpos)
@@ -235,13 +251,15 @@ assign = checked "assign" $ \ (v, b) f ->
                  $ M.adjust ( S.delete c ) old
                  $ b
                  ) (by_size g) (M.keys cneg)
+        , assignment = M.insert v b $ assignment g
+        , reason = M.insert v re $ reason g
         }
 
 
 -- | new clauses that refer to existing variables
-add_clauses :: [ M.Map V Bool ] -> Form -> Form
+add_clauses :: [ (M.Map V Bool, Origin) ] -> Form -> Form
 add_clauses = checked "add_clauses" $ \ cls f ->
-  foldr ( \ cl f -> add_clause 
+  foldr ( \ (cl,o) f -> add_clause o
           ( map (\(V v,b) -> literal b v) $ M.toList cl ) f )
         f cls
 
@@ -289,8 +307,8 @@ add_edge = checked "add_edge" $ \ (v,b,c) f ->
                 $ by_size f
     }
 
-add_clause :: [Literal] -> Form -> Form
-add_clause = checked "add_clause" $ \ cl f ->
+add_clause :: Origin -> [Literal] -> Form -> Form
+add_clause orig = checked (unwords [ "add_clause", show orig ]) $ \ cl f ->
   let c = next_clause f
       g = foldr ( \ l f ->
             add_edge (V $ variable l,positive l,c) f)
@@ -303,74 +321,8 @@ add_clause = checked "add_clause" $ \ cl f ->
               } )
           cl
   in  g { next_clause = succ $ next_clause g
+        , origin = case orig of
+            Input -> origin g
+            _ -> M.insert c orig $ origin g
         }
     
-
-{-
-
-instance Monoid CNF where
-  mempty = CNF S.empty
-  mappend (CNF a) (CNF b) = CNF $ S.delete CTrue $ S.union a b
-
-foldr f x (CNF s) = F.foldr f x s
-filter p (CNF s) = CNF $ S.filter p s
-
-size (CNF s) = S.size s
-                   
-clauses (CNF s) = F.toList s
-
-instance Show CNF  where
-    show cnf = unlines $ map show $ clauses cnf
-
-cnf :: [ Clause ] -> CNF 
-cnf cs = CNF $ S.fromList $ Prelude.filter ( /= CTrue) cs
-
-singleton c = CNF $ S.singleton c
-
-assign :: Variable -> Bool -> CNF -> CNF
-assign v p (CNF s) = ( F.foldMap $ \ c -> singleton $ case c of
-       CTrue -> CTrue
-       Clause m -> case M.lookup v m of
-         Nothing -> Clause m
-         Just q ->
-           if p == q then CTrue
-           else Clause $ M.delete v m ) s
-
-data Clause = Clause  ! ( M.Map Variable Bool )  | CTrue
-   deriving ( Eq, Ord )
-
-literals :: Clause ->  [ Literal ]
-literals c = case c of
-  Clause m -> map ( \ (v,p) -> literal p v ) $ M.toList m
-
-instance Monoid Clause where
-  mempty = Clause M.empty
-  mappend c1 c2 = case c1 of
-    CTrue -> CTrue
-    Clause m1 -> case c2 of
-      CTrue -> CTrue
-      Clause m2 ->
-        let common = M.intersection m1 m2
-        in  if M.isSubmapOf common m1 && M.isSubmapOf common m2
-            then Clause $ M.union m1 m2
-            else CTrue
-
-instance Show ( Clause ) where
-  show c = case c of
-    CTrue -> "# True"
-    Clause m -> unwords ( map show (literals c) ++ [ "0" ] )
-
-clause ::  [ Literal ] -> Clause 
-clause ls = Prelude.foldr
-            ( \ l c -> case c of
-                 CTrue -> CTrue           
-                 Clause m -> case M.lookup (variable l) m of
-                   Nothing -> Clause $ M.insert (variable l) (positive l) m
-                   Just p -> if p == positive l then Clause m else CTrue
-            ) mempty ls
-
-without c w = case c of
-  -- CTrue -> CTrue -- ?
-  Clause m -> Clause $ M.filterWithKey ( \ v p -> w /= v ) m
-
--}

@@ -21,7 +21,7 @@ form s = foldl' ( \ f line ->
      Right ns ->
        let cl = map (\ n -> literal (n>0) (abs n) )
               $ takeWhile (/= 0) ns
-       in  add_clause cl f 
+       in  add_clause Input cl f 
                 ) Satchmo.Form.empty
    $ BSC.lines s
 

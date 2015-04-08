@@ -52,7 +52,10 @@ delete k (Map m) = Map $ IM.delete (fromEnum k) m
 -- fold f z (Map m) = IM.fold f z m
 findWithDefault d k (Map m) = IM.findWithDefault d (fromEnum k) m
 difference (Map m1) (Map m2) = Map $ IM.difference m1 m2
+
+union :: Enum k => Map k v -> Map k v -> Map k v
 union (Map m1) (Map m2) = Map $ IM.union m1 m2
+
 unions ms = Map $ IM.unions $ P.map unMap ms
 unionWith f (Map m1) (Map m2) = Map $ IM.unionWith f m1 m2
 intersection (Map m1) (Map m2) = Map $ IM.intersection m1 m2
