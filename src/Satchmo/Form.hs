@@ -222,7 +222,7 @@ negative_units = M.map snd . polar_units False
 
 without clause  v = M.delete v clause
 
-literals cl = map (\(v,b) -> literal b v ) $ M.toList cl
+literals cl = map (\(V v,b) -> literal b v ) $ M.toList cl
 
 -- | some empty clause
 contradictory :: Form -> Bool

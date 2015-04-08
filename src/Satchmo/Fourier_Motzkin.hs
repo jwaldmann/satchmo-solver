@@ -9,7 +9,7 @@ import Satchmo.Data (Variable,variable,positive)
 import qualified Data.Map.Strict as M
 import qualified Data.EnumMap as E
 
-import Control.Monad ( guard, when )
+import Control.Monad ( guard, when, void, forM )
 import Data.Monoid
 import Data.List ( maximumBy, minimumBy )
 import Data.Function (on)
@@ -37,6 +37,7 @@ fomo cnf = do
     $ branch ) cnf
 
 logging = False
+conflict_logging = True
 
 print_info msg cnf = when logging $ do
   hPutStrLn stderr $ unwords [ msg, show $ size cnf, "\n" ]
@@ -57,7 +58,8 @@ unitprop cont f = do
   print_info "unitprop" f
   let punits = positive_units f
       nunits = negative_units f
-      conflicting = not $ E.null $ E.intersection punits nunits
+      conflicts = E.intersectionWith (,) punits nunits
+      conflicting = not $ E.null conflicts
       units = E.union (E.map (True,) punits) (E.map (False,) nunits)
   if E.null units
     then cont f
@@ -66,6 +68,10 @@ unitprop cont f = do
       if conflicting
          then do
            when logging $ do hPutStrLn stderr "conflict"
+           when conflict_logging $ do
+             hPutStrLn stderr "conflict"
+             void $ forM (E.toList conflicts) $ \ (v, (p,n)) -> do
+               hPutStrLn stderr $ show (v,(p,n))
            return $ Left
              $ Unsat { rup = [E.empty], learnt = [] }
          else do

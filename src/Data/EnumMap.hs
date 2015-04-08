@@ -48,6 +48,8 @@ elems (Map m) = IM.elems m
 
 filter :: Enum k => (v -> Bool) -> Map k v -> Map k v
 filter p (Map m) = Map $ IM.filter p m
+
+delete :: Enum k => k -> Map k v -> Map k v
 delete k (Map m) = Map $ IM.delete (fromEnum k) m
 -- fold f z (Map m) = IM.fold f z m
 findWithDefault d k (Map m) = IM.findWithDefault d (fromEnum k) m
@@ -58,7 +60,12 @@ union (Map m1) (Map m2) = Map $ IM.union m1 m2
 
 unions ms = Map $ IM.unions $ P.map unMap ms
 unionWith f (Map m1) (Map m2) = Map $ IM.unionWith f m1 m2
+
+intersection :: Enum k => Map k v1 -> Map k v2 -> Map k v1
 intersection (Map m1) (Map m2) = Map $ IM.intersection m1 m2
+
+intersectionWith :: Enum k => (v1 -> v2 -> v3) -> Map k v1 -> Map k v2 -> Map k v3
+intersectionWith f (Map m1) (Map m2) = Map $ IM.intersectionWith f m1 m2
 
 split :: Enum k => k -> Map k v -> (Map k v, Map k v)
 split k (Map m) =
