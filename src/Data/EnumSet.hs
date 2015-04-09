@@ -14,7 +14,7 @@ import Prelude hiding (null)
 import qualified Prelude
 import qualified Data.IntSet as I
 
-newtype Set k = Set (I.IntSet)
+newtype Set k = Set (I.IntSet) deriving Show
 
 fromList :: Enum k => [k] -> Set k
 fromList xs = Set $ I.fromList $ map fromEnum xs

@@ -49,7 +49,10 @@ trivial cont cnf = do
   if satisfied cnf
      then return $ Right E.empty
      else if contradictory cnf
-          then return $ Left
+          then do
+            when conflict_logging $ do
+              hPutStrLn stderr $ unlines [ "empty clauses", show (empty_clauses cnf) ]
+            return $ Left
                $ Unsat { rup = [E.empty], learnt = [] }
           else cont cnf
 
@@ -75,8 +78,9 @@ unitprop cont f = do
            return $ Left
              $ Unsat { rup = [E.empty], learnt = [] }
          else do
-           later <- fomo $ foldr ( \(v,(b,c)) f -> assign (Propagated c) (v,b) f) f
-                         $ E.toList units
+           later <- fomo $ descend_from f
+                         $ foldr ( \(v,(b,c)) f -> assign (Propagated c) (v,b) f) f
+                    $ E.toList units
            return $ case later of
              Left u -> Left u
              Right m -> Right $ E.union (E.map fst units) m
@@ -150,12 +154,12 @@ branch cnf = do
 
 
   when logging $ do hPutStr stderr $ unwords [ "D", show v, show p ]
-  a <- fomo $ assign Decided (v, p) cnf
+  a <- fomo $ descend_from cnf $ assign Decided (v, p) cnf
   case a of
     Right m -> return $ Right $ E.insert v p m
     Left ul -> do
       when logging $ do hPutStr stderr $ unwords [ "D", show v, show $ not p ]
-      b <- fomo $ assign Decided (v, not p) cnf
+      b <- fomo $ descend_from cnf $ assign Decided (v, not p) cnf
       case b of
         Right m -> return $ Right $ E.insert v (not p) m
         Left ur -> return $ Left
