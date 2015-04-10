@@ -291,6 +291,7 @@ literals_for c f = M.findWithDefault M.empty c $ back f
 positive_literals_for c f = M.filter id  $ literals_for c f
 negative_literals_for c f = M.filter not $ literals_for c f
 
+-- | all unit clauses
 units f = M.findWithDefault S.empty 1 $ by_size f
 
 polar_units :: Bool -> Form -> M.Map V (Bool, C)

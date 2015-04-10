@@ -1,7 +1,9 @@
--- | this module contains building blocks for a solver that does
--- variable elimination (Fourier-Motzkin), DPLL and CDCL.
--- For a satisfiable formula, the solver  will produce an assignment.
--- For an unsatisfiable formula, the solver will produce a proof
+-- | this module contains building blocks for a solver
+-- that does variable elimination (Fourier-Motzkin),
+-- DPLL and CDCL. For a satisfiable formula,
+-- the solver  will produce an assignment.
+-- For an unsatisfiable formula,
+-- the solver will produce a proof
 -- by reverse unit propagation (?)
 
 {-# language TupleSections #-}
@@ -60,6 +62,7 @@ trivial cont cnf = do
               hPutStrLn stderr $ unlines [ "empty clauses", show (empty_clauses cnf) ]
             void $ forM ( S.toList $ empty_clauses cnf ) $ \ c ->
               learn_from cnf c
+            error "abort here (for debugging)"  
             return $ Left
                $ Unsat { rup = [E.empty], learnt = [] }
           else cont cnf
@@ -103,31 +106,16 @@ resolve v ncl pcl =
 unitprop :: Solver -> Solver
 unitprop cont f = do
   print_info "unitprop" f
-  let punits = positive_units f
-      nunits = negative_units f
-      conflicts = E.intersectionWith (,) punits nunits
-      conflicting = not $ E.null conflicts
-      units = E.union (E.map (True,) punits) (E.map (False,) nunits)
-  if E.null units
-    then cont f
-    else do
-      when logging $ print ("units", units :: E.Map V (Bool,C) )
-      if conflicting
-         then do
-           when logging $ do hPutStrLn stderr "conflict"
-           when conflict_logging $ do
-             hPutStrLn stderr "conflict"
-             void $ forM (E.toList conflicts) $ \ (v, (p,n)) -> do
-               hPutStrLn stderr $ show (v,(p,n))
-           return $ Left
-             $ Unsat { rup = [E.empty], learnt = [] }
-         else do
-           later <- fomo $ descend_from f
-                         $ foldr ( \(v,(b,c)) f -> assign (Propagated c) (v,b) f) f
-                    $ E.toList units
-           return $ case later of
+  case S.toList $ units f of
+    [] -> cont f
+    c : _ -> do
+      let [(v,b)] = E.toList $ get_clause f c
+      when logging $ print ("unit:", c, (v,b))
+      later <- fomo $ descend_from f
+                    $ assign (Propagated c) (v,b) f
+      return $ case later of
              Left u -> Left u
-             Right m -> Right $ E.union (E.map fst units) m
+             Right m -> Right $ E.insert v b m
 
 eliminate :: Int -> Solver -> Solver
 eliminate bound cont nf = do
