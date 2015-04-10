@@ -1,3 +1,15 @@
+-- | this module defines the 'Form' data type
+-- to represent a CNF (a collection of clauses)
+-- that allows for efficient execution of these ops:
+-- for variable p:
+-- find the clauses where p occurs, with given polarity
+-- for clause c:
+-- find all variables that occur in c, with given polarity.
+-- FIXME: there is too much data here (some components of this record type
+-- contain the "(current) state" of the solver,
+-- which is more than just a formula (as the name suggests).
+-- TODO: document invariants for these extra components.
+
 {-# language TypeFamilies #-}
 {-# language FlexibleInstances #-}
 {-# language LambdaCase #-}
@@ -7,6 +19,7 @@
 module Satchmo.Form
 
 ( Form, V, C -- abstract
+, Clause 
 , empty
 , size
 , variables, clauses, smallest_clauses, empty_clauses
@@ -23,6 +36,8 @@ module Satchmo.Form
 , descend_from
 , Reason (..), Origin (..)
 
+, initial, root, get_assigned, get_reason
+
 -- * clauses
 , without, literals
 
@@ -34,7 +49,7 @@ where
 
 import Prelude 
 
-import Satchmo.Data (literal, variable,positive, Literal,Clause)
+import Satchmo.Data (literal, variable,positive, Literal )
 
 import qualified Data.EnumMap as M
 import qualified Data.EnumSet as S
@@ -61,46 +76,52 @@ newtype Time = Time Int deriving (Enum, Show, Eq, Ord)
 -- | decision level (ticks only at decisions)
 newtype Level = Level Int deriving (Enum, Show, Eq, Ord)
 
--- | should allow for efficient execution of these ops:
--- for variable p:
--- find the clauses where p occurs, with given polarity
--- for clause c:
--- find all variables that occur in c, with given polarity.
--- FIXME: there is too much data here (some components of this record type
--- contain the "(current) state" of the solver,
--- which is more than just a formula (as the name suggests).
--- TODO: document invariants for these extra components.
+type Clause = M.Map V Bool
+
 data Form  =
     Form { fore :: ! (M.Map V ( M.Map C Bool ))
          , next_var :: V
-         , back :: ! (M.Map C ( M.Map V Bool ))
+         , back :: ! (M.Map C Clause )
          , next_clause :: C
          , by_size :: ! (M.Map Int (S.Set C))
+
+         -- | from here on, solver state:
+           
          , assignment :: ! (M.Map V Bool)
          , origin :: ! (M.Map C Origin) -- ^ why is the clause in the formula?
-                     -- see @Origin@ for possible values.
+                     -- see |Origin| for possible values.
              -- the default value is @Input@ (so we can start with an empty map)
-         , reason :: ! (M.Map V Reason)           
+         , reason :: ! (M.Map V Reason)
+           -- ^ FIXME: could be merged with @assigned@ or @decision_level@ maps?
+
          , time :: ! Time
          , level :: ! Level
          , assigned :: ! (M.Map V Time)
          , decision_level :: ! (M.Map V Level)
-         , parent :: Maybe Form -- ^ immediate predecessor
+         , parent :: Maybe Form -- ^ predecessor.
+           -- (previous decision level, fully propagated?)
          , root :: Form -- ^ ultimate ancestor.
            -- this is needed (?) for clause learning
-           -- (we do resolution using clause from the root formula)
+           -- (we do resolution using clausesfrom the root formula)
            -- FIXME: not exactly true if we do elimination in between.
            -- note: call @root@ exactly once. there is
            -- danger of infinite recursion since "root (root f) == root f)"
          }
   -- deriving Show
 
+get_assigned f v = assigned f M.! v
+get_reason f v = reason f M.! v
+
 descend_from f g = g { parent = Just f , root = root f }
 
--- | the origin of clauses. Note: each clause has a number (of type @C@),
+initial f = f { parent = Nothing, root = f }
+
+-- | the origin of clauses. Note: each clause has a number (of type 'C' ,
 -- these numbers don't change. (new clauses get fresh numbers).
--- for each time: the current meaning (set of literals) in clause with nr. c
--- is a substitution instance (a subset of literals) of c's meaning at time of creation.
+-- for each time: the current meaning (set of literals)
+-- in clause with nr. c
+-- is a substitution instance (a subset of literals) of c's meaning
+-- at time of creation.
 --  TODO: expect to add arguments to constructors
 data Origin = Input -- ^ this clause is an element of the input CNF
             | Resolved C C -- ^ this clause appeared by resolution (elimination)
@@ -108,8 +129,10 @@ data Origin = Input -- ^ this clause is an element of the input CNF
     deriving ( Eq, Ord, Show )
 
 -- | the reason for the current value of a variable.
-data Reason = Decided -- ^ the value was assigned when entering a subtree
-            | Propagated C -- ^ the value was computed by unit propagation, using clause c
+data Reason
+  = Decided -- ^ the value was assigned when entering a subtree
+  | Propagated C -- ^ the value was computed by unit propagation,
+               -- using clause c
     deriving ( Eq, Ord, Show )
              
 
@@ -128,8 +151,9 @@ smallest_clauses s f = M.fromList $ take s $ do
   c <- S.toList m
   return (c, ())
 
-get_clause f c =
-  M.findWithDefault (error "get_clause") c $ back f 
+get_clause f c = case M.lookup c $ back f of
+  Just cl -> cl
+  Nothing -> error $ unwords [ "get_clause", show c, show $ back f ]
 
 -- | check the structural invariants.
 -- raise error (with msg) if they do not hold.

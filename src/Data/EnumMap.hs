@@ -44,6 +44,8 @@ mm @ (Map m) ! k = -- m IM.! fromEnum k
   IM.findWithDefault (error $ "missing key " ++ show k ++ " in " ++ show mm)
     (fromEnum k) m
 
+lookup k (Map m) = IM.lookup (fromEnum k) m
+
 insert k v (Map m) = Map $ IM.insert (fromEnum k) v m
 size (Map m) = IM.size m
 null (Map m) = IM.null m

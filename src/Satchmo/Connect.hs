@@ -1,3 +1,6 @@
+-- | this module implements the interface to 'MonadSAT' from satchmo.
+-- This allows to build the formula in satchmo, then call the solver.
+
 {-# language GeneralizedNewtypeDeriving #-}
 {-# language MultiParamTypeClasses #-}
 {-# language TypeSynonymInstances #-}
@@ -41,7 +44,7 @@ solve (S ff) = do
   when check_asserts $ hPutStrLn stderr $ unlines
     [ "!!!!!!!! Satchmo.Form.check_asserts == True (solver will be SLOW) !!!!!!!" ]
   let (r,s1) = runState ff Satchmo.Form.empty
-  res <- fomo s1
+  res <- fomo $ initial s1 
   case res of
     Left u -> do
       hPutStrLn stderr $ unlines $ "not satisfiable, RUP:"

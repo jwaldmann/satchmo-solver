@@ -1,13 +1,20 @@
+-- | this module contains building blocks for a solver that does
+-- variable elimination (Fourier-Motzkin), DPLL and CDCL.
+-- For a satisfiable formula, the solver  will produce an assignment.
+-- For an unsatisfiable formula, the solver will produce a proof
+-- by reverse unit propagation (?)
+
 {-# language TupleSections #-}
 {-# language BangPatterns #-}
 
 module Satchmo.Fourier_Motzkin where
 
-import Satchmo.Form
+import Satchmo.Form 
 import Satchmo.Data (Variable,variable,positive)
 
 import qualified Data.Map.Strict as M
 import qualified Data.EnumMap as E
+import qualified Data.EnumSet as S
 
 import Control.Monad ( guard, when, void, forM )
 import Data.Monoid
@@ -16,7 +23,6 @@ import Data.Function (on)
 import System.IO
 
 type Assignment = E.Map V Bool
-type Clause = E.Map V Bool
 type RUP = [Clause]
 
 data Unsat =
@@ -33,7 +39,7 @@ fomo cnf = do
   print_info "fomo" cnf
   (   trivial
     $ unitprop
-    -- $ eliminate 10
+    --  $ eliminate 10
     $ branch ) cnf
 
 logging = True
@@ -52,9 +58,47 @@ trivial cont cnf = do
           then do
             when conflict_logging $ do
               hPutStrLn stderr $ unlines [ "empty clauses", show (empty_clauses cnf) ]
+            void $ forM ( S.toList $ empty_clauses cnf ) $ \ c ->
+              learn_from cnf c
             return $ Left
                $ Unsat { rup = [E.empty], learnt = [] }
           else cont cnf
+
+-- | start with conflict clause. repeatedly resolve
+-- with the clause that lead (by unit propagation)
+-- to the most recent assignment (to a literal in the clause).
+learn_from :: Form -> C -> IO Clause
+learn_from f c = do
+  let start = get_clause (root f) c
+      -- invariant: all the variables in the clause are currently assigned.
+      -- proof: we start with a conflict clause,
+      -- we only use clauses that were used in unit prop.
+      most_recently_assigned_variable cl =
+        maximumBy (compare `on` (get_assigned f)) $ E.keys cl
+      go cl = do
+        let mora = most_recently_assigned_variable cl
+        hPutStrLn stderr $ unlines
+          [ unwords [ "current clause", show cl ]
+          , unwords [ "mora", show mora, show $ get_reason f mora ]
+          ]
+        case get_reason f mora of
+              Decided -> do
+                hPutStrLn stderr "done"
+                return cl
+              Propagated ucl -> do  
+                let cl' = get_clause (root f) ucl
+                hPutStrLn stderr $ unwords
+                   [ "propagating clause was" , show cl' ]
+                go $ resolve mora cl cl'
+  go start
+
+-- | resolve for variable v.
+resolve v ncl pcl =
+  let ncl' = ncl `without` v
+      pcl' = pcl `without` v
+  in  if ncl E.! v /= pcl E.! v
+      then E.unionWith (\ l r -> if l /= r then error "conflict in resolve?" else l ) ncl' pcl'
+      else  error $ unlines [ "resolve", show v, show ncl, show pcl ]
 
 unitprop :: Solver -> Solver
 unitprop cont f = do
