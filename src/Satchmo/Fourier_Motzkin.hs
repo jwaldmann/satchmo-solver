@@ -33,10 +33,10 @@ fomo cnf = do
   print_info "fomo" cnf
   (   trivial
     $ unitprop
-    $ eliminate 10
+    -- $ eliminate 10
     $ branch ) cnf
 
-logging = False
+logging = True
 conflict_logging = True
 
 print_info msg cnf = when logging $ do

@@ -53,6 +53,11 @@ check_asserts = False
 newtype V = V Int deriving (Enum, Show, Eq, Ord)
 newtype C = C Int deriving (Enum, Show, Eq, Ord)
 
+-- | clock ticks at each assignment (decide or propagate)
+newtype Time = Time Int deriving (Enum, Show, Eq, Ord)
+-- | decision level (ticks only at decisions)
+newtype Level = Level Int deriving (Enum, Show, Eq, Ord)
+
 -- | should allow for efficient execution of these ops:
 -- for variable p:
 -- find the clauses where p occurs, with given polarity
@@ -68,6 +73,10 @@ data Form  =
          , origin :: ! (M.Map C Origin) -- ^ see @Origin@ for possible values.
              -- the default value is @Input@ (so we can start with an empty map)
          , reason :: ! (M.Map V Reason)
+         , time :: ! Time
+         , level :: ! Level
+         , assigned :: ! (M.Map V Time)
+         , decision_level :: ! (M.Map V Level)
          }
   -- deriving Show
 
@@ -164,8 +173,20 @@ invariant_back_and_fore msg f =
       then f else error whine
 
 instance Show Form where
-  show f = unlines [ show $ fore f, show $ back f
-                   , show $ toList f ]
+  show f = unlines
+     [ unwords [ show $ time f , show $ level f ]
+     , unlines $ do
+          (l,vs) <- M.toAscList $ M.fromListWith S.union $ do
+            (v,l) <- M.toList $ decision_level f
+            return (l, S.singleton v)
+          let us = do
+               v <- sortBy (compare `on` (assigned f M.!)) $ S.toList vs
+               return $ ( if assignment f M.! v then id else negate )
+                      $ fromEnum v
+          return $ unwords $ show l : ":" :  map show us
+     -- , show $ fore f, show $ back f
+     , show $ map snd $ toList f
+     ]
 
 size f = M.size $ back f -- number of clauses
 
@@ -186,10 +207,14 @@ empty = Form
   , assignment = M.empty
   , reason = M.empty
   , origin = M.empty
+  , time = Time 0
+  , level = Level 0
+  , assigned = M.empty
+  , decision_level = M.empty
   }
 
 
--- * ops that are useful for the solver
+-- * ops that are useful for the solver:
 
 clauses_for :: V -> Form -> M.Map C Bool
 clauses_for v f = M.findWithDefault M.empty v $ fore f
@@ -232,28 +257,6 @@ contradictory f = not $ S.null $ M.findWithDefault S.empty 0 $ by_size f
 satisfied :: Form -> Bool
 satisfied f = M.null $ back f
 
--- | note: for efficiency, should return the set of
--- clauses that were changed (instead of all)
-assign :: Reason -> (V, Bool) -> Form -> Form
-assign re = checked ( unwords [ "assign", show re ] ) $ \ (v, b) f ->
-  let cpos = M.filter (==b) $ fore f M.! v
-      cneg = M.filter (/=b) $ fore f M.! v
-      g = foldr drop_clause f (M.keys cpos)
-      back' = foldr ( \ c m -> M.adjust (M.delete v) c m ) (back g) (M.keys cneg)
-  in  g { fore = M.delete v $ fore g
-        , back = back'
-        , by_size = foldr ( \ c b ->
-              let new = M.size $ back' M.! c
-                  old = succ new
-              in M.alter ( Just . \ case
-                      Nothing -> S.singleton c
-                      Just s -> S.insert c s ) new
-                 $ M.adjust ( S.delete c ) old
-                 $ b
-                 ) (by_size g) (M.keys cneg)
-        , assignment = M.insert v b $ assignment g
-        , reason = M.insert v re $ reason g
-        }
 
 
 -- | new clauses that refer to existing variables
@@ -326,3 +329,34 @@ add_clause orig = checked (unwords [ "add_clause", show orig ]) $ \ cl f ->
             _ -> M.insert c orig $ origin g
         }
     
+
+-- * ops that compute a new state (advance the clock, etc.)
+
+assign :: Reason -> (V, Bool) -> Form -> Form
+assign re = checked ( unwords [ "assign", show re ] ) $ \ (v, b) f ->
+  let cpos = M.filter (==b) $ fore f M.! v
+      cneg = M.filter (/=b) $ fore f M.! v
+      g = foldr drop_clause f (M.keys cpos)
+      back' = foldr ( \ c m -> M.adjust (M.delete v) c m ) (back g) (M.keys cneg)
+      this_level = case re of
+        Decided -> succ $ level g
+        Propagated {} -> level g
+  in  g { fore = M.delete v $ fore g
+        , back = back'
+        , by_size = foldr ( \ c b ->
+              let new = M.size $ back' M.! c
+                  old = succ new
+              in M.alter ( Just . \ case
+                      Nothing -> S.singleton c
+                      Just s -> S.insert c s ) new
+                 $ M.adjust ( S.delete c ) old
+                 $ b
+                 ) (by_size g) (M.keys cneg)
+        , assignment = M.insert v b $ assignment g
+        , reason = M.insert v re $ reason g
+        , assigned = M.insert v (time g) $ assigned g
+        , time = succ $ time g
+        , decision_level = M.insert v this_level $ decision_level g
+        , level = this_level
+        }
+

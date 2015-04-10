@@ -30,6 +30,9 @@ singleton k v = Map $ IM.singleton (fromEnum k) v
 toList :: Enum k => Map k v -> [(k,v)]
 toList (Map m) = P.map to $ IM.toList m
 
+toAscList :: Enum k => Map k v -> [(k,v)]
+toAscList (Map m) = P.map to $ IM.toAscList m
+
 fromList :: Enum k => [(k,v)] -> Map k v
 fromList kvs = Map $ IM.fromList $ P.map from kvs
 
