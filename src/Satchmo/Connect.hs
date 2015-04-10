@@ -38,6 +38,8 @@ instance MonadSAT S where
 
 solve :: S (Reader (E.Map V Bool) a) -> IO (Maybe a)
 solve (S ff) = do
+  when check_asserts $ hPutStrLn stderr $ unlines
+    [ "!!!!!!!! Satchmo.Form.check_asserts == True (solver will be SLOW) !!!!!!!" ]
   let (r,s1) = runState ff Satchmo.Form.empty
   res <- fomo s1
   case res of

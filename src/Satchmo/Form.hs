@@ -9,7 +9,7 @@ module Satchmo.Form
 ( Form, V, C -- abstract
 , empty
 , size
-, variables, clauses, smallest_clauses
+, variables, clauses, smallest_clauses, empty_clauses
 , get_clause
 
 , units, positive_units, negative_units
@@ -20,11 +20,14 @@ module Satchmo.Form
 , add_clauses, add_clause
 , drop_variable, add_variable
 , assign
-
+, descend_from
 , Reason (..), Origin (..)
 
 -- * clauses
 , without, literals
+
+
+, check_asserts
 )
 
 where
@@ -63,6 +66,10 @@ newtype Level = Level Int deriving (Enum, Show, Eq, Ord)
 -- find the clauses where p occurs, with given polarity
 -- for clause c:
 -- find all variables that occur in c, with given polarity.
+-- FIXME: there is too much data here (some components of this record type
+-- contain the "(current) state" of the solver,
+-- which is more than just a formula (as the name suggests).
+-- TODO: document invariants for these extra components.
 data Form  =
     Form { fore :: ! (M.Map V ( M.Map C Bool ))
          , next_var :: V
@@ -70,15 +77,25 @@ data Form  =
          , next_clause :: C
          , by_size :: ! (M.Map Int (S.Set C))
          , assignment :: ! (M.Map V Bool)
-         , origin :: ! (M.Map C Origin) -- ^ see @Origin@ for possible values.
+         , origin :: ! (M.Map C Origin) -- ^ why is the clause in the formula?
+                     -- see @Origin@ for possible values.
              -- the default value is @Input@ (so we can start with an empty map)
-         , reason :: ! (M.Map V Reason)
+         , reason :: ! (M.Map V Reason)           
          , time :: ! Time
          , level :: ! Level
          , assigned :: ! (M.Map V Time)
          , decision_level :: ! (M.Map V Level)
+         , parent :: Maybe Form -- ^ immediate predecessor
+         , root :: Form -- ^ ultimate ancestor.
+           -- this is needed (?) for clause learning
+           -- (we do resolution using clause from the root formula)
+           -- FIXME: not exactly true if we do elimination in between.
+           -- note: call @root@ exactly once. there is
+           -- danger of infinite recursion since "root (root f) == root f)"
          }
   -- deriving Show
+
+descend_from f g = g { parent = Just f , root = root f }
 
 -- | the origin of clauses. Note: each clause has a number (of type @C@),
 -- these numbers don't change. (new clauses get fresh numbers).
@@ -131,6 +148,24 @@ checked_ msg fun arg f = id
 invariant :: String -> Form -> Form
 invariant msg = invariant_by_size msg
               . invariant_back_and_fore msg
+              . invariant_for_assignment msg
+
+
+invariant_for_assignment :: String -> Form -> Form
+invariant_for_assignment msg f =
+  let whine s = error $ unlines [ msg
+         , "invariant_for_assignment violated. " ++ s
+         , "variables " ++ show (fore f)
+         , "assigned " ++ show (assignment f)
+         , "reason " ++ show (reason f)
+         , "formula " ++ show (toList f)           
+         ]
+      both = M.intersection (fore f) (assignment f)
+  in  if not $ M.null both
+      then whine "assigned variables occur in formula"
+      else if M.keys (assignment f) /= M.keys ( reason f)
+           then whine "M.keys assigned /= M.keys reason"
+           else f
 
 invariant_by_size msg f =   
   let actual = DM.filter (not . DS.null)
@@ -198,8 +233,8 @@ toList f = -- sortBy (compare `on` map abs) $
     return $ if b then v else negate v )
 
 empty :: Form
-empty = Form
-  { fore = M.empty
+empty = f where f = Form {
+    fore = M.empty
   , next_var = V 1
   , back = M.empty
   , next_clause = C 1
@@ -211,8 +246,11 @@ empty = Form
   , level = Level 0
   , assigned = M.empty
   , decision_level = M.empty
+  , parent = Nothing
+  , root = f
   }
 
+descend f g = g { parent = Just f, root = root f }
 
 -- * ops that are useful for the solver:
 
@@ -251,7 +289,10 @@ literals cl = map (\(V v,b) -> literal b v ) $ M.toList cl
 
 -- | some empty clause
 contradictory :: Form -> Bool
-contradictory f = not $ S.null $ M.findWithDefault S.empty 0 $ by_size f
+contradictory f = not $ S.null $ empty_clauses f
+
+empty_clauses :: Form -> S.Set C
+empty_clauses f =  M.findWithDefault S.empty 0 $ by_size f
 
 -- | no clauses at all
 satisfied :: Form -> Bool
