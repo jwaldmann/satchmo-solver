@@ -30,13 +30,15 @@ module Satchmo.Form
 , literals_for, positive_literals_for, negative_literals_for
 
 , satisfied, contradictory
-, add_clauses, add_clause
+, add_clauses, add_clause, add_clause'
 , drop_variable, add_variable
 , assign
 , descend_from
-, Reason (..), Origin (..)
+, Reason (..), Origin (..), Level 
 
-, initial, root, get_assigned, get_reason
+, initial, root, get_assigned, get_reason, get_decision_level
+, get_parent, get_level, get_assignment, the_assignment
+, set_parent
 
 -- * clauses
 , without, literals
@@ -109,8 +111,16 @@ data Form  =
          }
   -- deriving Show
 
+the_assignment f = assignment f
+
+get_assignment f v = assignment f M.! v
 get_assigned f v = assigned f M.! v
 get_reason f v = reason f M.! v
+get_decision_level f v = decision_level f M.! v
+get_parent f = parent f
+get_level f = level f
+
+set_parent f p = f { parent = p }
 
 descend_from f g = g { parent = Just f , root = root f }
 
@@ -375,6 +385,10 @@ add_edge = checked "add_edge" $ \ (v,b,c) f ->
                 $ M.adjust (S.delete c) (M.size m)
                 $ by_size f
     }
+
+add_clause' :: Origin -> Clause -> Form -> (Form, C)
+add_clause' orig cl f = 
+  ( add_clause orig (map (\(V v,b)-> literal b v) $ M.toList cl) f, next_clause f )
 
 add_clause :: Origin -> [Literal] -> Form -> Form
 add_clause orig = checked (unwords [ "add_clause", show orig ]) $ \ cl f ->

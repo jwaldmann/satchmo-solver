@@ -51,26 +51,55 @@ print_info msg cnf = when logging $ do
   hPutStrLn stderr $ unwords [ msg, show $ size cnf, "\n" ]
   hPutStrLn stderr $ show cnf ++ "\n"
 
+
+-- | backjump in case of conflict
+-- FIXME: the "learnt" clause is applied for unit prop,
+-- but then forgotten. 
 trivial :: Solver -> Solver
 trivial cont cnf = do
   print_info "trivial" cnf
   if satisfied cnf
      then return $ Right E.empty
-     else if contradictory cnf
-          then do
-            when conflict_logging $ do
-              hPutStrLn stderr $ unlines [ "empty clauses", show (empty_clauses cnf) ]
-            void $ forM ( S.toList $ empty_clauses cnf ) $ \ c ->
-              learn_from cnf c
-            error "abort here (for debugging)"  
-            return $ Left
-               $ Unsat { rup = [E.empty], learnt = [] }
-          else cont cnf
+     else case S.toList $ empty_clauses cnf of
+       [] -> cont cnf
+       e : _ -> do
+         when conflict_logging $ do
+           hPutStrLn stderr $ unwords
+               [ "empty clause", show e ]
+         (cl,lvl,mora) <- learn_from cnf e
+
+         let b = not $ get_assignment cnf mora
+             f = find_level lvl cnf
+             g = add_learnt cl f
+         hPutStrLn stderr $ unlines
+           [ "backjump to", show g ]
+         fomo g
+
+-- | FIXME: needs too much time (it visits all previous states)
+-- FIXME: and it is broken anyway since the new clause
+-- must also be added to the root (with identical number)
+add_learnt cl f =
+  let cl' = E.difference cl $ the_assignment f
+      (g, _) = add_clause' Learnt cl' f
+  in  case get_parent g of
+        Nothing -> g
+        Just p -> set_parent g $ Just $ add_learnt cl p 
+      
+
+find_level l f =
+  if l == get_level f then f
+  else case get_parent f of
+            Just g -> find_level l g
 
 -- | start with conflict clause. repeatedly resolve
 -- with the clause that lead (by unit propagation)
 -- to the most recent assignment (to a literal in the clause).
-learn_from :: Form -> C -> IO Clause
+-- return the second highest decision level
+-- of the learnt clause (this is the target for the backjump)
+-- and the most recently assigned variable in the learnt clause
+-- (the opposite assignment would be asserted by
+-- unit propagation)
+learn_from :: Form -> C -> IO (Clause, Level, V)
 learn_from f c = do
   let start = get_clause (root f) c
       -- invariant: all the variables in the clause are currently assigned.
@@ -86,8 +115,13 @@ learn_from f c = do
           ]
         case get_reason f mora of
               Decided -> do
-                hPutStrLn stderr "done"
-                return cl
+                let lvl = maximum $ do
+                      (v,b) <- E.toList cl
+                      guard $ v /= mora
+                      return $ get_decision_level f v
+                hPutStrLn stderr $ unwords
+                  [ "done", "mora", show mora, show lvl ]
+                return (cl, lvl, mora)
               Propagated ucl -> do  
                 let cl' = get_clause (root f) ucl
                 hPutStrLn stderr $ unwords
