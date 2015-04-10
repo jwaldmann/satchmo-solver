@@ -17,7 +17,8 @@ main :: IO ()
 main = do
     args <- getArgs
     let n = case args of
-          [] -> 1001
+          -- [] -> 1001
+          [] -> 15
           [s] -> read s
     res :: Maybe [ Integer ] <- solve $ factor n
     print res

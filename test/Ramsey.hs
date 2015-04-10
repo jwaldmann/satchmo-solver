@@ -30,7 +30,8 @@ main :: IO ()
 main = do
     argv <- getArgs
     let ns = map read $ case argv of
-          [] -> [ "3", "3", "3", "16" ]
+          -- [] -> [ "3", "3", "3", "16" ]
+          [] -> [ "3", "4", "8" ]
           _ -> argv
         cs = init ns 
         n = last ns
