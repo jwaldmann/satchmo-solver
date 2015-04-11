@@ -11,7 +11,7 @@ main = do
     [f] -> BSC.readFile f
   let f = Satchmo.Parse.form s
   -- print f
-  res <- fomo f
+  res <- fomo $ initial f
   case res of
     Left u -> do
       putStrLn $ unlines $ "UNSAT" : map show (reverse $ rup u)
