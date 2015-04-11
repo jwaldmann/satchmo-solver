@@ -22,8 +22,12 @@ source-repository head
 library
   hs-source-dirs: src
   exposed-modules:    
-    Satchmo.Fourier_Motzkin,
+    Satchmo.Form.Types,
+    Satchmo.Form.Model,
+    -- Satchmo.Form.Implementation
     Satchmo.Form,
+    Satchmo.State,
+    Satchmo.Fourier_Motzkin,
     Satchmo.Connect,
     Satchmo.Parse,
     Data.EnumMap,

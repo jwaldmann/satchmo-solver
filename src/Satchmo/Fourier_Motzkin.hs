@@ -9,10 +9,15 @@
 {-# language TupleSections #-}
 {-# language BangPatterns #-}
 
-module Satchmo.Fourier_Motzkin where
+module Satchmo.Fourier_Motzkin
 
-import Satchmo.Form 
-import Satchmo.Data (Variable,variable,positive)
+( fomo, initial, Unsat (..) )
+
+where
+
+import Satchmo.State
+
+-- import Satchmo.Data (Variable,variable,positive)
 
 import qualified Data.Map.Strict as M
 import qualified Data.EnumMap as E
@@ -34,29 +39,45 @@ data Unsat =
      deriving Show
 
 type Result = Either Unsat Assignment
-type Solver = Form -> IO Result
+type Solver = State -> IO Result
 
 fomo :: Solver
-fomo cnf = do
-  print_info "fomo" cnf
-  (   trivial
+fomo s = do
+  print_info "fomo" s
+  (   check_sat
+    $ backtrack_if_unsat   
     $ unitprop
     --  $ eliminate 10
-    $ branch ) cnf
+    $ branch ) s
 
-logging = True
+-- logging = True
+logging = False
+
 conflict_logging = True
+-- conflict_logging = False
 
-print_info msg cnf = when logging $ do
-  hPutStrLn stderr $ unwords [ msg, show $ size cnf, "\n" ]
-  hPutStrLn stderr $ show cnf ++ "\n"
+print_info msg s = when logging $ do
+  hPutStrLn stderr $ unlines [ msg, show s ]
 
+check_sat cont s = do
+  print_info "check_sat" s
+  if satisfied $ current s
+     then return $ Right E.empty
+     else cont s
+
+backtrack_if_unsat cont s = do
+  print_info "backtrack_if_unsat" s
+  if contradictory $ current s
+    then return $ Left $ Unsat { rup = [emptyC], learnt = [] }
+    else cont s
+  
+{-
 
 -- | backjump in case of conflict
 -- FIXME: the "learnt" clause is applied for unit prop,
 -- but then forgotten. 
-trivial :: Solver -> Solver
-trivial cont cnf = do
+backjump_if_unsat :: Solver -> Solver
+backjump_if_unsat cont cnf = do
   print_info "trivial" cnf
   if satisfied cnf
      then return $ Right E.empty
@@ -75,6 +96,8 @@ trivial cont cnf = do
            [ "backjump to", show g ]
          fomo g
 
+
+
 -- | FIXME: needs too much time (it visits all previous states)
 -- FIXME: and it is broken anyway since the new clause
 -- must also be added to the root (with identical number)
@@ -91,6 +114,8 @@ find_level l f =
   else case get_parent f of
             Just g -> find_level l g
 
+-}
+
 -- | start with conflict clause. repeatedly resolve
 -- with the clause that lead (by unit propagation)
 -- to the most recent assignment (to a literal in the clause).
@@ -99,31 +124,33 @@ find_level l f =
 -- and the most recently assigned variable in the learnt clause
 -- (the opposite assignment would be asserted by
 -- unit propagation)
-learn_from :: Form -> C -> IO (Clause, Level, V)
-learn_from f c = do
-  let start = get_clause (root f) c
+learn_from :: State -> C -> IO (Clause, Level, V)
+learn_from s c = do
+  let start = get_clause (root s) c
       -- invariant: all the variables in the clause are currently assigned.
       -- proof: we start with a conflict clause,
       -- we only use clauses that were used in unit prop.
       most_recently_assigned_variable cl =
-        maximumBy (compare `on` (get_assigned f)) $ E.keys cl
+        maximumBy (compare `on` (get_assigned s))
+         $ map variable $ literals cl
       go cl = do
         let mora = most_recently_assigned_variable cl
         hPutStrLn stderr $ unlines
           [ unwords [ "current clause", show cl ]
-          , unwords [ "mora", show mora, show $ get_reason f mora ]
+          , unwords [ "mora", show mora, show $ get_reason s mora ]
           ]
-        case get_reason f mora of
+        case get_reason s mora of
               Decided -> do
                 let lvl = maximum $ do
-                      (v,b) <- E.toList cl
+                      l <- literals cl
+                      let v = variable l
                       guard $ v /= mora
-                      return $ get_decision_level f v
+                      return $ get_decision_level s v
                 hPutStrLn stderr $ unwords
                   [ "done", "mora", show mora, show lvl ]
                 return (cl, lvl, mora)
               Propagated ucl -> do  
-                let cl' = get_clause (root f) ucl
+                let cl' = get_clause (root s) ucl
                 hPutStrLn stderr $ unwords
                    [ "propagating clause was" , show cl' ]
                 go $ resolve mora cl cl'
@@ -133,37 +160,41 @@ learn_from f c = do
 resolve v ncl pcl =
   let ncl' = ncl `without` v
       pcl' = pcl `without` v
-  in  if ncl E.! v /= pcl E.! v
-      then E.unionWith (\ l r -> if l /= r then error "conflict in resolve?" else l ) ncl' pcl'
+  in  if get_value ncl v /= get_value pcl v
+      then unionC ncl' pcl'
       else  error $ unlines [ "resolve", show v, show ncl, show pcl ]
 
 unitprop :: Solver -> Solver
-unitprop cont f = do
-  print_info "unitprop" f
-  case S.toList $ units f of
-    [] -> cont f
+unitprop cont s = do
+  print_info "unitprop" s
+  let f = current s
+  case units f of
+    [] -> cont s
     c : _ -> do
-      let [(v,b)] = E.toList $ get_clause f c
+      let (v,b) = get_unit_clause f c
       when logging $ print ("unit:", c, (v,b))
-      later <- fomo $ descend_from f
-                    $ assign (Propagated c) (v,b) f
+      later <- fomo $ descend_from s
+                    $ assign (Propagated c) (v,b) s
       return $ case later of
              Left u -> Left u
              Right m -> Right $ E.insert v b m
 
 eliminate :: Int -> Solver -> Solver
-eliminate bound cont nf = do
-  print_info "eliminate" nf
-  let -- this is expensive (visits all variables and clauses) :
-      reductions = E.mapWithKey ( \ v () ->
-        let pos = E.size $ positive_clauses_for v nf
-            neg = E.size $ negative_clauses_for v nf
-        in pos*neg - pos - neg ) $ variables nf 
-      (v,c) = minimumBy (compare `on` snd)
-            $ E.toList reductions
-      pos = E.keys $ positive_clauses_for v nf
-      neg = E.keys $ negative_clauses_for v nf
+eliminate bound cont s = do
+  print_info "eliminate" s  
+  let nf = current s
+      -- this is expensive (visits all variables and clauses) :
+      reductions = map ( \ v  ->
+        let pos = M.size $ positive_clauses_for v nf
+            neg = M.size $ negative_clauses_for v nf
+        in (v,pos*neg - pos - neg ) ) $ variables nf 
+      (v,c) = minimumBy (compare `on` snd) reductions
+      pos :: [C]        
+      pos = M.keys $ positive_clauses_for v nf
+      neg :: [C]
+      neg = M.keys $ negative_clauses_for v nf
 
+      resolved :: M.Map Clause Origin
       resolved = M.fromList $ do
         p <- pos
         let cp = get_clause nf p
@@ -171,19 +202,19 @@ eliminate bound cont nf = do
         n <- neg
         let cn = get_clause nf n
         let cnv = cn `without` v
-        guard $ E.intersection cpv cnv
-             == E.intersection cnv cpv
-        return ( E.union cpv cnv, Resolved p n )
+        guard $ compatibleC cpv cnv
+        return ( unionC cpv cnv, Resolved p n )
   -- print ("v/c", v,c)
   -- print ("pos/neg", pos, neg)
-  when logging $ do print ("resolved", resolved :: M.Map (E.Map V Bool) Origin )
+  when logging $ do print ("resolved", resolved)
 
   if c > bound
-    then cont nf
+    then cont s
     else do
 
       -- FIXME: need to add info on the origin of the fresh clauses
-      let res = add_clauses (M.toList resolved) $ drop_variable v nf
+      let res = add_clauses (M.keys resolved)
+              $ drop_variable v s
       -- print res
       let reconstruct v m = Prelude.or $ do
             cp <- map (get_clause nf) pos 
@@ -193,8 +224,6 @@ eliminate bound cont nf = do
               return $ if positive lit then v else Prelude.not v 
       when logging $ hPutStrLn stderr $ unwords
           [ "best resolution:", show v, "count", show c ]
-      when logging $ hPutStr stderr $ unwords
-          [ "R", show v , show (size nf, size res) ]
    
       later <- fomo res
       return $ case later of
@@ -203,34 +232,36 @@ eliminate bound cont nf = do
 
 islongerthan k xs = not $ null $ drop k xs
 
-branch cnf = do
-  print_info "branch" cnf
+branch :: Solver
+branch s = do
+  print_info "branch" s
+  let cnf :: CNF
+      cnf = current s
 
-  let stat :: M.Map (V,Bool) Double
+  let stat :: M.Map Literal Double
       stat = M.fromListWith (+) $ do
         
-        (c,()) <- E.toList $ smallest_clauses 1000 cnf
-        let m = get_clause cnf c
+        c <- smallest_clauses 1000 cnf
+        let cl = get_clause cnf c
         let w = -- 2 ^^ negate (M.size m)
-              1 / fromIntegral (E.size m)
-        (v,b) <- E.toList m        
-        return ((v,b), w)
-      ((v,p),w) = maximumBy (compare `on` snd)
-                  $ M.toList stat
-
+              1 / fromIntegral (sizeC cl)
+        l <- literals cl
+        return (l, w)
+      (l,w) = maximumBy (compare `on` snd) $ M.toList stat
+      v = variable l ; p = positive l
 
   when logging $ do hPutStr stderr $ unwords [ "D", show v, show p ]
-  a <- fomo $ descend_from cnf $ assign Decided (v, p) cnf
+  a <- fomo $ descend_from s $ assign Decided (v, p) s
   case a of
     Right m -> return $ Right $ E.insert v p m
     Left ul -> do
       when logging $ do hPutStr stderr $ unwords [ "D", show v, show $ not p ]
-      b <- fomo $ descend_from cnf $ assign Decided (v, not p) cnf
+      b <- fomo $ descend_from s $ assign Decided (v, not p) s
       case b of
         Right m -> return $ Right $ E.insert v (not p) m
         Left ur -> return $ Left
-          $ Unsat { rup =  E.empty
-                         : map (E.insert v       p) (rup ul)
-                        ++ map (E.insert v $ not p) (rup ur)
+          $ Unsat { rup =  emptyC
+                         : map (insertC v       p) (rup ul)
+                        ++ map (insertC v $ not p) (rup ur)
                   , learnt = []
                   }

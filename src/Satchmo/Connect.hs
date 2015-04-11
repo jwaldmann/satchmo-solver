@@ -17,7 +17,6 @@ import Satchmo.MonadSAT
 import Satchmo.Code
 import Satchmo.Boolean ( Boolean(..) )
 
-import Satchmo.Data (literal, variable,positive, Literal)
 import qualified Satchmo.Data as SD
 
 import Control.Monad.State.Strict
@@ -25,25 +24,29 @@ import Control.Monad.Reader
 import Control.Applicative
 import System.IO
 
-newtype S a = S (State Form a) deriving
-  ( Monad, MonadFix, MonadState Form , Applicative, Functor)
+newtype S a = S (State (CNF,V) a) deriving
+  ( Monad, MonadFix , MonadState (CNF,V)
+  , Applicative, Functor)
 
 instance MonadSAT S where
   fresh = do
-    f <- get
-    let (g, v) = add_variable f
-    put g
-    return $ literal True $ fromEnum v
+    (f,top) <- get
+    put (f,succ top)
+    return $ SD.literal True $ fromEnum top
   
   emit cl = do
-    modify $ add_clause Input (SD.literals cl)
+    modify $ \(f,v)
+             -> (add_clauses [clause $ map (\l ->
+                (toEnum $ SD.variable l,SD.positive l) ) $ SD.literals cl] f, v)
 
 
 solve :: S (Reader (E.Map V Bool) a) -> IO (Maybe a)
 solve (S ff) = do
   when check_asserts $ hPutStrLn stderr $ unlines
     [ "!!!!!!!! Satchmo.Form.check_asserts == True (solver will be SLOW) !!!!!!!" ]
-  let (r,s1) = runState ff Satchmo.Form.empty
+  when using_model $ hPutStrLn stderr $ unlines
+    [ "!!!!!!!! Satchmo.Form.using_model == True (solver will be SLOW) !!!!!!!" ]
+  let (r,(s1,_)) = runState ff (Satchmo.Form.empty, toEnum 1)
   res <- fomo $ initial s1 
   case res of
     Left u -> do
@@ -57,6 +60,6 @@ instance Decode (Reader (E.Map V Bool)) Boolean Bool where
     Constant c -> return c
     Boolean l -> do
       m <- ask
-      let v = E.findWithDefault False ( variable l ) m
-      return $ if positive l then v else not v
+      let v = E.findWithDefault False ( SD.variable l ) m
+      return $ if SD.positive l then v else not v
 

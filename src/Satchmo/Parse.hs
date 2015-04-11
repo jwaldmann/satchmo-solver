@@ -4,7 +4,7 @@
 module Satchmo.Parse where
 
 import Satchmo.Form
-import Satchmo.Data
+-- import Satchmo.Data
 
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.Char8 as BSC
@@ -14,14 +14,14 @@ import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.Foldable ( foldl' )
 import Control.Applicative
 
-form :: BS.ByteString -> Form
+form :: BS.ByteString -> CNF
 form s = foldl' ( \ f line ->
    case A.parseOnly ( pline <* A.endOfInput ) $ BSC.toStrict line of
      Left msg -> f
      Right ns ->
-       let cl = map (\ n -> literal (n>0) (abs n) )
+       let cl = clause $ map (\ n -> (toEnum $ abs n, n>0) )
               $ takeWhile (/= 0) ns
-       in  add_clause Input cl f 
+       in  add_clauses [cl] f 
                 ) Satchmo.Form.empty
    $ BSC.lines s
 
