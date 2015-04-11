@@ -27,6 +27,7 @@ library
     -- Satchmo.Form.Implementation
     Satchmo.Form,
     Satchmo.State,
+    Satchmo.State.Model,
     Satchmo.Fourier_Motzkin,
     Satchmo.Connect,
     Satchmo.Parse,

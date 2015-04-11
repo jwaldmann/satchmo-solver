@@ -5,9 +5,9 @@
 module Satchmo.Form.Model
 
 ( module Satchmo.Form.Types 
-, CNF, C
+, CNF, cnf, C
 , size
-, variables, clauses
+, variables, clauses, clausesL
 , smallest_clauses
 , empty_clauses
 , get_clause, get_unit_clause
@@ -48,6 +48,8 @@ using_model = True
 
 data CNF = CNF { clauses :: DS.Set Clause }
   deriving Show
+
+cnf cls = CNF { clauses = DS.fromList cls }
 
 type C = Clause
 

@@ -58,6 +58,8 @@ delete :: Enum k => k -> Map k v -> Map k v
 delete k (Map m) = Map $ IM.delete (fromEnum k) m
 -- fold f z (Map m) = IM.fold f z m
 findWithDefault d k (Map m) = IM.findWithDefault d (fromEnum k) m
+
+difference :: Enum k => Map k v -> Map k w -> Map k v
 difference (Map m1) (Map m2) = Map $ IM.difference m1 m2
 
 union :: Enum k => Map k v -> Map k v -> Map k v

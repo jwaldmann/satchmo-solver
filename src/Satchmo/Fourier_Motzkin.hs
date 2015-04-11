@@ -45,16 +45,17 @@ fomo :: Solver
 fomo s = do
   print_info "fomo" s
   (   check_sat
-    $ backtrack_if_unsat   
+    -- $ backtrack_if_unsat
+    $ backjump_if_unsat   
     $ unitprop
     --  $ eliminate 10
-    $ branch ) s
+    -- $ branch
+    $ nobranch
+    ) s
 
--- logging = True
 logging = False
-
 conflict_logging = True
--- conflict_logging = False
+nobranch_logging = False
 
 print_info msg s = when logging $ do
   hPutStrLn stderr $ unlines [ msg, show s ]
@@ -62,59 +63,33 @@ print_info msg s = when logging $ do
 check_sat cont s = do
   print_info "check_sat" s
   if satisfied $ current s
-     then return $ Right E.empty
+     then return $ Right $ the_assignment s
      else cont s
 
 backtrack_if_unsat cont s = do
   print_info "backtrack_if_unsat" s
   if contradictory $ current s
-    then return $ Left $ Unsat { rup = [emptyC], learnt = [] }
+    then do
+      return $ Left $ Unsat { rup = [emptyC], learnt = [] }
     else cont s
   
-{-
-
--- | backjump in case of conflict
--- FIXME: the "learnt" clause is applied for unit prop,
--- but then forgotten. 
 backjump_if_unsat :: Solver -> Solver
-backjump_if_unsat cont cnf = do
-  print_info "trivial" cnf
-  if satisfied cnf
-     then return $ Right E.empty
-     else case S.toList $ empty_clauses cnf of
-       [] -> cont cnf
+backjump_if_unsat cont s = do
+  print_info "backjump_if_unsat" s
+  case empty_clauses s of
+       [] -> cont s
        e : _ -> do
          when conflict_logging $ do
-           hPutStrLn stderr $ unwords
-               [ "empty clause", show e ]
-         (cl,lvl,mora) <- learn_from cnf e
+           hPutStrLn stderr $ show s
+         (cl,lvl,mora) <- learn_from s e
+         let b = not $ get_assignment s mora
+         when conflict_logging $ hPutStrLn stderr $ unlines
+             [ "backjump from " ++ show (get_level s)
+             , "         to   " ++ show lvl
+             , "    and learn " ++ show cl
+             ]
+         fomo $ learn_and_backjump s (cl,lvl)
 
-         let b = not $ get_assignment cnf mora
-             f = find_level lvl cnf
-             g = add_learnt cl f
-         hPutStrLn stderr $ unlines
-           [ "backjump to", show g ]
-         fomo g
-
-
-
--- | FIXME: needs too much time (it visits all previous states)
--- FIXME: and it is broken anyway since the new clause
--- must also be added to the root (with identical number)
-add_learnt cl f =
-  let cl' = E.difference cl $ the_assignment f
-      (g, _) = add_clause' Learnt cl' f
-  in  case get_parent g of
-        Nothing -> g
-        Just p -> set_parent g $ Just $ add_learnt cl p 
-      
-
-find_level l f =
-  if l == get_level f then f
-  else case get_parent f of
-            Just g -> find_level l g
-
--}
 
 -- | start with conflict clause. repeatedly resolve
 -- with the clause that lead (by unit propagation)
@@ -135,7 +110,7 @@ learn_from s c = do
          $ map variable $ literals cl
       go cl = do
         let mora = most_recently_assigned_variable cl
-        hPutStrLn stderr $ unlines
+        when logging $ hPutStrLn stderr $ unlines
           [ unwords [ "current clause", show cl ]
           , unwords [ "mora", show mora, show $ get_reason s mora ]
           ]
@@ -146,12 +121,12 @@ learn_from s c = do
                       let v = variable l
                       guard $ v /= mora
                       return $ get_decision_level s v
-                hPutStrLn stderr $ unwords
+                when logging $ hPutStrLn stderr $ unwords
                   [ "done", "mora", show mora, show lvl ]
                 return (cl, lvl, mora)
               Propagated ucl -> do  
                 let cl' = get_clause (root s) ucl
-                hPutStrLn stderr $ unwords
+                when logging $ hPutStrLn stderr $ unwords
                    [ "propagating clause was" , show cl' ]
                 go $ resolve mora cl cl'
   go start
@@ -168,16 +143,13 @@ unitprop :: Solver -> Solver
 unitprop cont s = do
   print_info "unitprop" s
   let f = current s
-  case units f of
+  case unit_clauses s of
     [] -> cont s
     c : _ -> do
-      let (v,b) = get_unit_clause f c
+      let (v,b) = get_unit_clause s c
       when logging $ print ("unit:", c, (v,b))
-      later <- fomo $ descend_from s
+      fomo $ descend_from s
                     $ assign (Propagated c) (v,b) s
-      return $ case later of
-             Left u -> Left u
-             Right m -> Right $ E.insert v b m
 
 eliminate :: Int -> Solver -> Solver
 eliminate bound cont s = do
@@ -232,6 +204,29 @@ eliminate bound cont s = do
 
 islongerthan k xs = not $ null $ drop k xs
 
+nobranch :: Solver
+nobranch s = do
+  print_info "nobranch" s
+  let cnf :: CNF
+      cnf = current s
+
+  let stat :: M.Map Literal Double
+      stat = M.fromListWith (+) $ do
+        
+        c <- smallest_clauses 1000 cnf
+        let cl = get_clause cnf c
+        let w = -- 2 ^^ negate (M.size m)
+              1 / fromIntegral (sizeC cl)
+        l <- literals cl
+        return (l, w)
+      (l,w) = maximumBy (compare `on` snd) $ M.toList stat
+      v = variable l ; p = positive l
+
+  when nobranch_logging $ hPutStr stderr $ unlines
+      [ "nobranch", show s, "decide " ++ show v ++ show p ]
+  fomo $ descend_from s $ assign Decided (v, p) s
+
+  
 branch :: Solver
 branch s = do
   print_info "branch" s

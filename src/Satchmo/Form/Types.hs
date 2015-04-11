@@ -6,7 +6,7 @@ module Satchmo.Form.Types
 , Literal, variable, positive
 , Clause, clause, literals, unit, nullC, emptyC, sizeC, insertC, unionC
 , compatibleC
-, get_value, without
+, get_value, without, withouts
 )
 
 where
@@ -51,3 +51,4 @@ literals :: Clause -> [ Literal ]
 literals (Clause m) = map (uncurry Literal) $ M.toList m
 
 without (Clause m) v = Clause $ M.delete v m
+withouts (Clause m) a = Clause $ M.difference m a
